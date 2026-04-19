@@ -52,10 +52,11 @@ export default function AnnouncementsTab() {
                 <MenuItem value="text">Text Only</MenuItem>
                 <MenuItem value="photo">Image + Text</MenuItem>
                 <MenuItem value="video">Video + Text</MenuItem>
+                <MenuItem value="sticker">Sticker</MenuItem>
               </Select>
             </FormControl>
 
-            {(mediaType === 'photo' || mediaType === 'video') && (
+            {(mediaType === 'photo' || mediaType === 'video' || mediaType === 'sticker') && (
               <TextField
                 label="Media URL or Telegram file_id"
                 value={media}
