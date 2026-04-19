@@ -3,14 +3,13 @@ import { Box, Button, Card, CardContent, Stack, TextField, ToggleButton, ToggleB
 import { apiSend } from './api.js'
 
 export default function LoginPage({ brandName, onSuccess, forcedRole, panelLabel }) {
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [role, setRole] = useState(forcedRole || 'admin')
 
   const submit = async () => {
     setError('')
-    const result = await apiSend('/login', 'POST', { email, password, role })
+    const result = await apiSend('/login', 'POST', { password, role })
     if (result.success) {
       sessionStorage.setItem('admin-auth', '1')
       sessionStorage.setItem('admin-role', result.role || role)
@@ -27,7 +26,7 @@ export default function LoginPage({ brandName, onSuccess, forcedRole, panelLabel
       onSuccess(result.role || role)
       return
     }
-    setError(role === 'admin' ? 'Invalid email/password or master password' : 'Invalid password')
+    setError('Invalid password')
   }
 
   return (
@@ -62,15 +61,6 @@ export default function LoginPage({ brandName, onSuccess, forcedRole, panelLabel
                 <ToggleButton value="owner">Owner</ToggleButton>
               </ToggleButtonGroup>
             ) : null}
-            {role === 'admin' ? (
-              <TextField
-                label="Email (recommended)"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                fullWidth
-              />
-            ) : null}
             <TextField
               label="Password"
               type="password"
@@ -91,7 +81,7 @@ export default function LoginPage({ brandName, onSuccess, forcedRole, panelLabel
             </Button>
             {role === 'admin' ? (
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                Email login ties your panel subscription to one account. Telegram Chat ID stays optional and is only for bot access later.
+                Password se login hoga. Telegram Chat ID optional hai aur sirf bot management ke liye use hogi.
               </Typography>
             ) : null}
           </Stack>
