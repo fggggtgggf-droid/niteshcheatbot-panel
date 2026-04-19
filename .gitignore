@@ -1,0 +1,10 @@
+logs/
+*.log
+*.err.log
+*.out.log
+__pycache__/
+*.pyc
+website/node_modules/
+website/dist/
+website/.vercel/
+data/
