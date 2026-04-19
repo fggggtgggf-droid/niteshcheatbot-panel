@@ -21,6 +21,7 @@ import AdminsTab from './tabs/AdminsTab.jsx'
 import ManageResellersTab from './tabs/ManageResellersTab.jsx'
 import AnnouncementsTab from './tabs/AnnouncementsTab.jsx'
 import PaymentRequestsTab from './tabs/PaymentRequestsTab.jsx'
+import PaymentSettingsTab from './tabs/PaymentSettingsTab.jsx'
 import ResetRequestsTab from './tabs/ResetRequestsTab.jsx'
 import ReportsTab from './tabs/ReportsTab.jsx'
 import AdminProfileTab from './tabs/AdminProfileTab.jsx'
@@ -39,6 +40,7 @@ const adminTabs = [
   { id: 'products', label: 'Manage Products', component: ManageProductsTab },
   { id: 'license-keys', label: 'License Keys', component: LicenseKeysTab },
   { id: 'payments', label: 'Payment Requests', component: PaymentRequestsTab },
+  { id: 'settings', label: 'Settings', component: PaymentSettingsTab },
   { id: 'hwid-resets', label: 'HWID Resets', component: ResetRequestsTab },
   { id: 'customization', label: 'Bot Customization', component: CustomizationTab },
   { id: 'buttons', label: 'Custom Buttons', component: ButtonsTab },
@@ -50,6 +52,7 @@ const ownerTabs = [
   { id: 'plans', label: 'Plans', component: OwnerPlansTab },
   { id: 'admins', label: 'Admin Manage', component: AdminsTab },
   { id: 'payments', label: 'Payments', component: PaymentRequestsTab },
+  { id: 'settings', label: 'Settings', component: PaymentSettingsTab },
   { id: 'customization', label: 'Brand Settings', component: CustomizationTab },
 ]
 

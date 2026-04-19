@@ -1,34 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Input,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material'
+import { Button, Card, CardContent, Stack, Typography } from '@mui/material'
 import { apiGet, apiSend } from '../api.js'
 
 export default function PaymentRequestsTab() {
-  const [settings, setSettings] = useState({ qr: '', upi_id: '', min_deposit: 100, max_deposit: 5000 })
   const [requests, setRequests] = useState([])
   const [products, setProducts] = useState([])
   const [plans, setPlans] = useState([])
   const [users, setUsers] = useState([])
-  const [message, setMessage] = useState('')
 
   const refresh = async () => {
-    const [s, r, p, pl, u] = await Promise.all([
-      apiGet('/payment-settings'),
+    const [r, p, pl, u] = await Promise.all([
       apiGet('/payment-requests'),
       apiGet('/products'),
       apiGet('/plans'),
       apiGet('/users'),
     ])
-    setSettings(s)
     setRequests(r)
     setProducts(p)
     setPlans(pl)
@@ -62,23 +48,6 @@ export default function PaymentRequestsTab() {
     [users],
   )
 
-  const saveSettings = async () => {
-    await apiSend('/payment-settings', 'PUT', settings)
-    setMessage('Deposit settings saved')
-    refresh()
-  }
-
-  const uploadQr = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      setSettings((prev) => ({ ...prev, qr: String(reader.result || '') }))
-    }
-    reader.readAsDataURL(file)
-    event.target.value = ''
-  }
-
   const approve = async (id) => {
     await apiSend(`/payment-requests/${id}/approve`, 'POST', {})
     refresh()
@@ -96,60 +65,9 @@ export default function PaymentRequestsTab() {
           &gt;&gt; Admin / Payment Requests
         </Typography>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          UPI ID do, optional static QR do, aur users bot me amount choose karke payment request bhej denge.
+          Yahan par submitted deposits approve ya reject kar sakte ho.
         </Typography>
       </Stack>
-
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <TextField
-              label="UPI ID"
-              value={settings.upi_id || ''}
-              onChange={(event) => setSettings((prev) => ({ ...prev, upi_id: event.target.value }))}
-              fullWidth
-            />
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <TextField
-                label="Minimum Deposit"
-                type="number"
-                value={settings.min_deposit || 100}
-                onChange={(event) => setSettings((prev) => ({ ...prev, min_deposit: Number(event.target.value || 100) }))}
-                fullWidth
-              />
-              <TextField
-                label="Maximum Deposit"
-                type="number"
-                value={settings.max_deposit || 5000}
-                onChange={(event) => setSettings((prev) => ({ ...prev, max_deposit: Number(event.target.value || 5000) }))}
-                fullWidth
-              />
-            </Stack>
-            <TextField
-              label="Optional Static QR (Telegram file_id / Image URL / uploaded image)"
-              value={settings.qr || ''}
-              onChange={(event) => setSettings((prev) => ({ ...prev, qr: event.target.value }))}
-              fullWidth
-            />
-            <Button variant="outlined" component="label">
-              Upload QR Image
-              <Input type="file" inputProps={{ accept: 'image/*' }} sx={{ display: 'none' }} onChange={uploadQr} />
-            </Button>
-            {String(settings.qr || '').startsWith('data:image/') || String(settings.qr || '').startsWith('http') ? (
-              <Box
-                component="img"
-                src={settings.qr}
-                alt="Payment QR"
-                sx={{ width: 220, maxWidth: '100%', borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}
-              />
-            ) : null}
-            <Button variant="contained" onClick={saveSettings}>
-              Save Deposit Settings
-            </Button>
-            {message && <Alert severity="success">{message}</Alert>}
-          </Stack>
-        </CardContent>
-      </Card>
 
       {requests
         .slice()

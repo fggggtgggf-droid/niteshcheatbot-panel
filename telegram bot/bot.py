@@ -13,7 +13,7 @@ import urllib.request
 from io import BytesIO
 
 import qrcode
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -515,9 +515,9 @@ def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
     if upi_id:
         lines.append("💳 Choose your deposit method below.")
         lines.append(f"UPI ID: {upi_id}")
-        lines.append(f"Minimum deposit: Rs {minimum}")
-        lines.append(f"Maximum deposit: Rs {maximum}")
-        lines.append("Tap Pay via UPI, then select amount and submit the UTR.")
+        lines.append(f"⚠ Minimum: Rs {minimum}")
+        lines.append(f"⚠ Maximum: Rs {maximum}")
+        lines.append("Tap Pay via UPI and continue.")
     else:
         lines.extend(
             [
@@ -533,10 +533,12 @@ def deposit_amount_prompt_text(user_id: int, needed: int = 0) -> str:
     lines = [wallet_text(user_id)]
     if needed > 0:
         lines.append(f"Required to continue: Rs {needed}")
-    lines.append("💠 Enter the amount you want to deposit.")
-    lines.append(f"Allowed range: Rs {minimum} to Rs {maximum}")
-    lines.append("After you send the amount, QR will be generated automatically.")
-    return premium_card("SELECT AMOUNT", lines)
+    lines.append("Enter the amount you want to deposit")
+    lines.append("in INR.")
+    lines.append(f"⚠ Minimum: Rs {minimum}")
+    lines.append(f"⚠ Maximum: Rs {maximum}")
+    lines.append("Type the amount and send.")
+    return premium_card("Deposit via UPI", lines)
 
 
 async def send_deposit_checkout_message(message, user_id: int, amount: int, request_id: str) -> None:
@@ -639,6 +641,93 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             pass
     sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
     context.user_data["last_start_message_id"] = sent.message_id
+
+
+async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or not update.message:
+        return
+    await update.message.reply_text(
+        premium_card("PREMIUM SHOP", [wallet_text(update.effective_user.id), "Tap any product below to continue."]),
+        parse_mode="HTML",
+        reply_markup=build_products_menu(),
+    )
+
+
+async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or not update.message:
+        return
+    user_id = update.effective_user.id
+    orders = sorted(list_orders(user_id), key=lambda item: str(item.get("id", "")), reverse=True)
+    if not orders:
+        await update.message.reply_text(
+            premium_card("MY ORDERS", [wallet_text(user_id), "No orders yet."]),
+            parse_mode="HTML",
+        )
+        return
+    lines = [wallet_text(user_id)]
+    for item in orders[:10]:
+        lines.append(f"📦 #{item.get('id')} • {item.get('status', '-')}")
+        lines.append(f"💸 Rs {int(float(item.get('amount', 0) or 0))}")
+    await update.message.reply_text(premium_card("MY ORDERS", lines), parse_mode="HTML")
+
+
+async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or not update.message:
+        return
+    user = get_user_by_telegram_id(update.effective_user.id) or {}
+    await update.message.reply_text(
+        premium_card(
+            "MY PROFILE",
+            [
+                f"👤 Name: {user.get('first_name', 'User')}",
+                f"✨ Username: @{user.get('username')}" if user.get("username") else "✨ Username: -",
+                f"🆔 User ID: {update.effective_user.id}",
+                f"💰 Wallet Balance: Rs {int(user.get('balance', 0) or 0)}",
+                f"📅 Joined On: {user.get('created_at', '-')}",
+            ],
+        ),
+        parse_mode="HTML",
+    )
+
+
+async def deposit_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or not update.message:
+        return
+    pay_settings = payment_settings()
+    if str(pay_settings.get("upi_id", "")).strip() or str(pay_settings.get("qr", "")).strip():
+        await update.message.reply_text(
+            deposit_prompt_text(update.effective_user.id),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(deposit_method_rows()),
+        )
+    else:
+        await update.message.reply_text(
+            premium_card(
+                "DEPOSIT MAINTENANCE",
+                [
+                    "Deposit abhi maintenance mein hai.",
+                    admin_contact_line(),
+                ],
+            ),
+            parse_mode="HTML",
+        )
+
+
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or not update.message:
+        return
+    app_settings = settings()
+    await update.message.reply_text(
+        "\n".join(
+            item
+            for item in [
+                app_settings.get("support_text", ""),
+                f"Telegram: {app_settings.get('telegram_support_link', '')}",
+                f"WhatsApp: {app_settings.get('whatsapp_support_link', '')}",
+            ]
+            if item
+        )
+    )
 
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1640,6 +1729,11 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 def build_application() -> Application:
     app = Application.builder().token(bot_token()).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("shop", shop_command))
+    app.add_handler(CommandHandler("orders", orders_command))
+    app.add_handler(CommandHandler("profile", profile_command))
+    app.add_handler(CommandHandler("deposit", deposit_command))
+    app.add_handler(CommandHandler("support", support_command))
     app.add_handler(CallbackQueryHandler(on_button_click))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.ALL | filters.Sticker.ALL, on_media_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
@@ -1704,6 +1798,16 @@ async def run_bot() -> None:
     app = build_application()
     await app.initialize()
     await app.start()
+    await app.bot.set_my_commands(
+        [
+            BotCommand("start", "Open bot menu"),
+            BotCommand("shop", "Open premium shop"),
+            BotCommand("orders", "View my orders"),
+            BotCommand("profile", "View my profile"),
+            BotCommand("deposit", "Add wallet balance"),
+            BotCommand("support", "Open support"),
+        ]
+    )
     await app.updater.start_polling(drop_pending_updates=True)
 
     reminder_task = asyncio.create_task(run_reminder_loop(app))
