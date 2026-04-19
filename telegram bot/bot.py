@@ -257,7 +257,7 @@ def wallet_text(telegram_id: int) -> str:
 
 def highlighted_label(label: str) -> str:
     clean = str(label or "").strip()
-    return f"✦ {clean} ✦" if clean else ""
+    return f"❖ {clean} ❖" if clean else ""
 
 
 def admin_contact_line() -> str:
@@ -371,7 +371,7 @@ def build_product_menu(product_id: str) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(highlighted_label(action["label"]), url=action["url"])])
     for button in filter_buttons("product", product_id=product_id):
         rows.append([InlineKeyboardButton(highlighted_label(button["label"]), callback_data=f"btn:{button['id']}")])
-    rows.append([InlineKeyboardButton("✦ Choose Plan ✦", callback_data=f"plans:{product_id}")])
+    rows.append([InlineKeyboardButton("🛒 Buy This Now", callback_data=f"plans:{product_id}")])
     rows.append([InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")])
     return InlineKeyboardMarkup(rows)
 
@@ -379,9 +379,9 @@ def build_product_menu(product_id: str) -> InlineKeyboardMarkup:
 def build_plan_menu(product_id: str) -> InlineKeyboardMarkup:
     rows = []
     for plan in list_plans(product_id):
-        label = f"{plan['name']} - Rs {int(float(plan.get('price', 0)))}"
+        label = f"💠 {plan['name']} • Rs {int(float(plan.get('price', 0)))}"
         if int(plan.get("stock", 0)) <= 0:
-            label = f"{label} (Out of Stock)"
+            label = f"{label} • Out of Stock"
         rows.append([InlineKeyboardButton(highlighted_label(label), callback_data=f"plan:{plan['id']}")])
     rows.append([InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")])
     return InlineKeyboardMarkup(rows)
@@ -481,15 +481,24 @@ async def send_admin_alert_with_markup(context: ContextTypes.DEFAULT_TYPE, text:
             continue
 
 
+def deposit_method_rows(needed: int = 0) -> list[list[InlineKeyboardButton]]:
+    rows: list[list[InlineKeyboardButton]] = []
+    if needed > 0:
+        rows.append([InlineKeyboardButton(f"💰 Add Rs {needed} Now", callback_data=f"deposit_method_upi:{needed}")])
+    rows.append([InlineKeyboardButton("💳 Pay via UPI", callback_data="deposit_method_upi")])
+    rows.append([InlineKeyboardButton("◀ Back to Menu", callback_data="back:menu")])
+    return rows
+
+
 def deposit_amount_rows(needed: int = 0) -> list[list[InlineKeyboardButton]]:
     rows = [
-        [InlineKeyboardButton("Rs 100", callback_data="deposit_amt:100"), InlineKeyboardButton("Rs 200", callback_data="deposit_amt:200")],
-        [InlineKeyboardButton("Rs 300", callback_data="deposit_amt:300"), InlineKeyboardButton("Rs 400", callback_data="deposit_amt:400")],
-        [InlineKeyboardButton("Rs 500", callback_data="deposit_amt:500"), InlineKeyboardButton("Custom Amount", callback_data="deposit_custom")],
+        [InlineKeyboardButton("💸 Rs 100", callback_data="deposit_amt:100"), InlineKeyboardButton("💸 Rs 200", callback_data="deposit_amt:200")],
+        [InlineKeyboardButton("💸 Rs 300", callback_data="deposit_amt:300"), InlineKeyboardButton("💸 Rs 400", callback_data="deposit_amt:400")],
+        [InlineKeyboardButton("💸 Rs 500", callback_data="deposit_amt:500"), InlineKeyboardButton("✍ Custom Amount", callback_data="deposit_custom")],
     ]
     if needed > 0:
-        rows.insert(0, [InlineKeyboardButton(f"Deposit Exact Rs {needed}", callback_data=f"deposit_amt:{needed}")])
-    rows.append([InlineKeyboardButton("Back to Menu", callback_data="back:menu")])
+        rows.insert(0, [InlineKeyboardButton(f"✅ Deposit Exact Rs {needed}", callback_data=f"deposit_amt:{needed}")])
+    rows.append([InlineKeyboardButton("◀ Back to Deposit", callback_data="deposit_now")])
     return rows
 
 
@@ -499,12 +508,13 @@ def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
     minimum, maximum = deposit_limits()
     lines = [wallet_text(user_id)]
     if needed > 0:
-        lines.append(f"Need Rs {needed} more to purchase.")
+        lines.append(f"Need Rs {needed} more to complete this purchase.")
     if upi_id:
+        lines.append("💳 Choose your deposit method below.")
         lines.append(f"UPI ID: {upi_id}")
-        lines.append(f"Minimum: Rs {minimum}")
-        lines.append(f"Maximum: Rs {maximum}")
-        lines.append("Choose an amount below, pay that exact amount, then submit the transaction ID.")
+        lines.append(f"Minimum deposit: Rs {minimum}")
+        lines.append(f"Maximum deposit: Rs {maximum}")
+        lines.append("Tap Pay via UPI, then select amount and submit the UTR.")
     else:
         lines.extend(
             [
@@ -513,6 +523,17 @@ def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
             ]
         )
     return premium_card("DEPOSIT NOW", lines)
+
+
+def deposit_amount_prompt_text(user_id: int, needed: int = 0) -> str:
+    minimum, maximum = deposit_limits()
+    lines = [wallet_text(user_id)]
+    if needed > 0:
+        lines.append(f"Required to continue: Rs {needed}")
+    lines.append("💠 Select the amount you want to add.")
+    lines.append(f"Allowed range: Rs {minimum} to Rs {maximum}")
+    lines.append("After payment, send the transaction ID / UTR.")
+    return premium_card("SELECT AMOUNT", lines)
 
 
 async def send_deposit_checkout_message(message, user_id: int, amount: int, request_id: str) -> None:
@@ -526,21 +547,28 @@ async def send_deposit_checkout_message(message, user_id: int, amount: int, requ
     ]
     if upi_id:
         lines.append(f"UPI ID: {upi_id}")
-        lines.append("Scan the QR or pay using the UPI ID, then tap I Have Paid.")
+        lines.append("✅ Pay this exact amount using the QR or UPI ID.")
+        lines.append("🧾 Then tap I Have Paid and submit your UTR.")
     else:
-        lines.append("Static QR configured by admin.")
-        lines.append("Pay and then tap I Have Paid.")
+        lines.append("Admin QR is configured.")
+        lines.append("✅ Pay this amount, then tap I Have Paid.")
     markup = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("I Have Paid", callback_data=f"deposit_paid:{request_id}")],
+            [InlineKeyboardButton("✅ I Have Paid", callback_data=f"deposit_paid:{request_id}")],
             [InlineKeyboardButton("❌ Cancel", callback_data=f"deposit_cancel:{request_id}")],
         ]
     )
     caption = premium_card("PAYMENT CHECKOUT", lines)
     if qr_source:
-        await message.reply_photo(photo=media_input(qr_source, "upi-qr.jpg"), caption=caption, parse_mode="HTML", reply_markup=markup)
-    else:
-        await message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
+        try:
+            await message.reply_photo(photo=media_input(qr_source, "upi-qr.jpg"), caption=caption, parse_mode="HTML", reply_markup=markup)
+            return
+        except Exception:
+            pass
+    fallback_lines = list(lines)
+    if upi_id:
+        fallback_lines.append("If QR is not visible, pay manually using the UPI ID above.")
+    await message.reply_text(premium_card("PAYMENT CHECKOUT", fallback_lines), parse_mode="HTML", reply_markup=markup)
 
 
 def build_owner_panel_markup() -> InlineKeyboardMarkup:
@@ -795,7 +823,16 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = get_user_by_telegram_id(update.effective_user.id) or {}
         await send_admin_alert_with_markup(
             context,
-            f"New payment submitted\nRequest ID: {pending_request}\nUser: {update.effective_user.id}\nUsername: @{user.get('username') or '-'}\nBalance: Rs {int(user.get('balance', 0) or 0)}\nUTR: {ref}",
+            premium_card(
+                "NEW DEPOSIT REQUEST",
+                [
+                    f"Request ID: {pending_request}",
+                    f"User ID: {update.effective_user.id}",
+                    f"Username: @{user.get('username') or '-'}",
+                    f"Wallet: Rs {int(user.get('balance', 0) or 0)}",
+                    f"UTR: {ref}",
+                ],
+            ),
             InlineKeyboardMarkup(
                 [[
                     InlineKeyboardButton("Approve", callback_data=f"admin_pay_approve:{pending_request}"),
@@ -926,7 +963,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.message.reply_text(
                 deposit_prompt_text(update.effective_user.id),
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(deposit_amount_rows()),
+                reply_markup=InlineKeyboardMarkup(deposit_method_rows()),
             )
         else:
             await update.message.reply_text(
@@ -994,7 +1031,7 @@ async def show_deposit_prompt(query, user_id: int, needed: int = 0):
     pay_settings = payment_settings()
     qr = str(pay_settings.get("qr", "")).strip()
     upi_id = str(pay_settings.get("upi_id", "")).strip()
-    markup = InlineKeyboardMarkup(deposit_amount_rows(needed))
+    markup = InlineKeyboardMarkup(deposit_method_rows(needed))
     await delete_previous(query)
     if qr or upi_id:
         await query.message.reply_text(deposit_prompt_text(user_id, needed), parse_mode="HTML", reply_markup=markup)
@@ -1257,9 +1294,37 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await show_deposit_prompt(query, query.from_user.id)
         return
 
+    if data == "deposit_method_upi":
+        await delete_previous(query)
+        await query.message.reply_text(
+            deposit_amount_prompt_text(query.from_user.id),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(deposit_amount_rows()),
+        )
+        return
+
+    if data.startswith("deposit_method_upi:"):
+        needed = int(data.split(":", 1)[1])
+        await delete_previous(query)
+        await query.message.reply_text(
+            deposit_amount_prompt_text(query.from_user.id, needed),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(deposit_amount_rows(needed)),
+        )
+        return
+
     if data == "deposit_custom":
         context.user_data["awaiting_custom_deposit_amount"] = "1"
-        await query.message.reply_text("Send the custom deposit amount now. Example: 250")
+        await query.message.reply_text(
+            premium_card(
+                "CUSTOM DEPOSIT",
+                [
+                    "✍ Send the exact amount you want to deposit.",
+                    "Example: 250",
+                ],
+            ),
+            parse_mode="HTML",
+        )
         return
 
     if data.startswith("deposit_amt:"):
@@ -1288,7 +1353,16 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data.startswith("deposit_paid:"):
         request_id = data.split(":", 1)[1]
         context.user_data["awaiting_upi_ref_for"] = request_id
-        await query.message.reply_text("Payment done? Send the transaction ID / UTR now.")
+        await query.message.reply_text(
+            premium_card(
+                "SEND UTR",
+                [
+                    "🧾 Payment complete? Now send your transaction ID / UTR.",
+                    "Example: 123456789012",
+                ],
+            ),
+            parse_mode="HTML",
+        )
         return
 
     if data.startswith("deposit_cancel:"):
@@ -1298,7 +1372,10 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception:
             pass
         context.user_data["awaiting_upi_ref_for"] = ""
-        await query.message.reply_text("Deposit request cancelled.")
+        await query.message.reply_text(
+            premium_card("DEPOSIT CANCELLED", ["❌ Your deposit request has been cancelled."]),
+            parse_mode="HTML",
+        )
         return
 
     if data.startswith("prod:"):
@@ -1307,11 +1384,11 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not product:
             await query.message.reply_text("Product not found.")
             return
-        lines = [f"Product: {product['name']}", wallet_text(query.from_user.id)]
+        lines = [f"🎯 Product: {product['name']}", wallet_text(query.from_user.id)]
         if int(product.get("is_recommended", 0)) == 1:
-            lines.append("Choice Of Developer")
+            lines.append("✅ Developer Pick")
         features = [line.strip() for line in str(product.get("features", "")).split("\n") if line.strip()]
-        lines.extend([f"- {item}" for item in features[:8]])
+        lines.extend([f"⚡ {item}" for item in features[:8]])
         await delete_previous(query)
         await query.message.reply_text(
             premium_card("PRODUCT PREVIEW", lines),
@@ -1324,7 +1401,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         product_id = data.split(":", 1)[1]
         await delete_previous(query)
         await query.message.reply_text(
-            premium_card("SELECT PLAN", [wallet_text(query.from_user.id)]),
+            premium_card("SELECT YOUR PLAN", [wallet_text(query.from_user.id), "💎 Pick the duration you want to buy."]),
             parse_mode="HTML",
             reply_markup=build_plan_menu(product_id),
         )
@@ -1353,20 +1430,20 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         balance = int(get_wallet_balance(query.from_user.id))
         needed = max(0, price - balance)
         caption = premium_card(
-            "PLAN DETAILS",
+            "BUY THIS NOW",
             [
-                f"Product: {product.get('name', 'Product') if product else 'Product'}",
-                f"Plan: {plan.get('name', '-')}",
-                f"Price: Rs {price}",
-                f"Wallet: Rs {balance}",
-                f"Stock: {int(plan.get('stock', 0))}",
+                f"🎯 Product: {product.get('name', 'Product') if product else 'Product'}",
+                f"📦 Plan: {plan.get('name', '-')}",
+                f"💸 Price: Rs {price}",
+                f"💼 Wallet: Rs {balance}",
+                f"📊 Stock: {int(plan.get('stock', 0))}",
             ],
         )
         if needed > 0:
-            caption = f"{caption}\n\nNeed Rs {needed} more. Click Deposit Now."
-            buttons = [[InlineKeyboardButton("Deposit Now", callback_data="deposit_now")], [InlineKeyboardButton("Back to Shop", callback_data="shop_now")]]
+            caption = f"{caption}\n\n✅ Need Rs {needed} more. Tap Deposit Now to continue."
+            buttons = [[InlineKeyboardButton("💳 Deposit Now", callback_data="deposit_now")], [InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")]]
         else:
-            buttons = [[InlineKeyboardButton("Buy From Wallet", callback_data=f"buywallet:{plan_id}")], [InlineKeyboardButton("Back to Shop", callback_data="shop_now")]]
+            buttons = [[InlineKeyboardButton("🛒 Buy From Wallet", callback_data=f"buywallet:{plan_id}")], [InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")]]
         await delete_previous(query)
         media_url = get_product_media_url(product or {})
         if media_url:
@@ -1525,10 +1602,10 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         "MY PROFILE",
                         [
                             f"👤 Name: {user.get('first_name', 'User')}",
-                            f"🔖 Username: @{user.get('username')}" if user.get("username") else "🔖 Username: -",
+                            f"✨ Username: @{user.get('username')}" if user.get("username") else "✨ Username: -",
                             f"🆔 User ID: {query.from_user.id}",
-                            f"💰 Wallet: Rs {int(user.get('balance', 0) or 0)}",
-                            f"📅 Joined: {user.get('created_at', '-')}",
+                            f"💰 Wallet Balance: Rs {int(user.get('balance', 0) or 0)}",
+                            f"📅 Joined On: {user.get('created_at', '-')}",
                         ],
                     ),
                     parse_mode="HTML",
