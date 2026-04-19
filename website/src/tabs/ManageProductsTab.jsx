@@ -58,6 +58,11 @@ const emptyTier = {
   is_active: true,
 }
 
+const createTier = (overrides = {}) => ({
+  ...emptyTier,
+  ...overrides,
+})
+
 export default function ManageProductsTab() {
   const [products, setProducts] = useState([])
   const [plans, setPlans] = useState([])
@@ -69,7 +74,8 @@ export default function ManageProductsTab() {
   const [deletedActionIds, setDeletedActionIds] = useState([])
   const [editingId, setEditingId] = useState('')
   const [newProduct, setNewProduct] = useState(emptyProduct)
-  const [newTier, setNewTier] = useState(emptyTier)
+  const [newTiers, setNewTiers] = useState([createTier()])
+  const [deletedTierIds, setDeletedTierIds] = useState([])
 
   const refresh = async () => {
     const [productsData, plansData, actionsData] = await Promise.all([
@@ -98,7 +104,8 @@ export default function ManageProductsTab() {
   const openCreate = () => {
     setEditingId('')
     setNewProduct(emptyProduct)
-    setNewTier(emptyTier)
+    setNewTiers([createTier()])
+    setDeletedTierIds([])
     setActionDrafts([])
     setDeletedActionIds([])
     setFeatureDraft('')
@@ -108,9 +115,9 @@ export default function ManageProductsTab() {
 
   const openEdit = (product) => {
     const productId = String(product.id)
-    const firstPlan = [...(plansByProduct[productId] || [])].sort(
+    const productPlans = [...(plansByProduct[productId] || [])].sort(
       (a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0),
-    )[0]
+    )
     const productActions = actions
       .filter((item) => String(item.product_id) === productId)
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
@@ -127,16 +134,23 @@ export default function ManageProductsTab() {
       sort_order: Number(product.sort_order || 0),
       is_active: !!Number(product.is_active ?? 1),
     })
-    setNewTier({
-      id: firstPlan?.id || '',
-      name: firstPlan?.name || '1 Day',
-      price: Number(firstPlan?.price || 0),
-      duration_days: Number(firstPlan?.duration_days || 1),
-      reseller_price: Number(firstPlan?.reseller_price || 0),
-      hwid_reset_limit: Number(firstPlan?.hwid_reset_limit || 0),
-      sort_order: Number(firstPlan?.sort_order || 0),
-      is_active: !!Number(firstPlan?.is_active ?? 1),
-    })
+    setNewTiers(
+      productPlans.length
+        ? productPlans.map((plan, index) =>
+            createTier({
+              id: plan.id || '',
+              name: plan.name || `${index + 1} Day`,
+              price: Number(plan.price || 0),
+              duration_days: Number(plan.duration_days || 1),
+              reseller_price: Number(plan.reseller_price || 0),
+              hwid_reset_limit: Number(plan.hwid_reset_limit || 0),
+              sort_order: Number(plan.sort_order || index),
+              is_active: !!Number(plan.is_active ?? 1),
+            }),
+          )
+        : [createTier()],
+    )
+    setDeletedTierIds([])
     setActionDrafts(
       productActions.map((item) => ({
         id: item.id,
@@ -171,25 +185,32 @@ export default function ManageProductsTab() {
       productId = String(created.id)
     }
 
-    const tierPayload = {
-      product_id: productId,
-      name: newTier.name,
-      price: Number(newTier.price || 0),
-      duration_days: Number(newTier.duration_days || 1),
-      reseller_price: Number(newTier.reseller_price || 0),
-      hwid_reset_limit: Number(newTier.hwid_reset_limit || 0),
-      stock: editingId ? undefined : 0,
-      sort_order: Number(newTier.sort_order || 0),
-      is_active: newTier.is_active ? 1 : 0,
+    for (const tierId of deletedTierIds) {
+      await apiSend(`/plans/${tierId}`, 'DELETE')
     }
 
-    if (newTier.id) {
-      await apiSend(`/plans/${newTier.id}`, 'PUT', {
-        ...tierPayload,
-        stock: undefined,
-      })
-    } else {
-      await apiSend('/plans', 'POST', tierPayload)
+    const validTiers = newTiers.filter((tier) => tier.name.trim())
+    for (const [index, tier] of validTiers.entries()) {
+      const tierPayload = {
+        product_id: productId,
+        name: tier.name,
+        price: Number(tier.price || 0),
+        duration_days: Number(tier.duration_days || 1),
+        reseller_price: Number(tier.reseller_price || 0),
+        hwid_reset_limit: Number(tier.hwid_reset_limit || 0),
+        stock: editingId ? undefined : 0,
+        sort_order: index,
+        is_active: tier.is_active ? 1 : 0,
+      }
+
+      if (tier.id) {
+        await apiSend(`/plans/${tier.id}`, 'PUT', {
+          ...tierPayload,
+          stock: undefined,
+        })
+      } else {
+        await apiSend('/plans', 'POST', tierPayload)
+      }
     }
 
     for (const actionId of deletedActionIds) {
@@ -215,7 +236,8 @@ export default function ManageProductsTab() {
 
     setEditingId('')
     setNewProduct(emptyProduct)
-    setNewTier(emptyTier)
+    setNewTiers([createTier()])
+    setDeletedTierIds([])
     setActionDrafts([])
     setDeletedActionIds([])
     setFeatureDraft('')
@@ -523,56 +545,121 @@ export default function ManageProductsTab() {
 
             <Card>
               <CardContent>
-                <Typography variant="overline">Duration Tiers</Typography>
+                <Stack direction="row" justifyContent="space-between" sx={{ alignItems: 'center' }}>
+                  <Typography variant="overline">Duration Tiers</Typography>
+                  <Button
+                    variant="outlined"
+                    onClick={() =>
+                      setNewTiers((prev) => [
+                        ...prev,
+                        createTier({
+                          name: `${prev.length + 1} Day`,
+                          duration_days: prev.length + 1,
+                          sort_order: prev.length,
+                        }),
+                      ])
+                    }
+                  >
+                    Add Tier
+                  </Button>
+                </Stack>
                 <Stack spacing={2} mt={2}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-                    <TextField
-                      label="Tier Name"
-                      value={newTier.name}
-                      onChange={(event) =>
-                        setNewTier((prev) => ({ ...prev, name: event.target.value }))
-                      }
-                      fullWidth
-                    />
-                    <TextField
-                      label="Price"
-                      type="number"
-                      value={newTier.price}
-                      onChange={(event) =>
-                        setNewTier((prev) => ({ ...prev, price: event.target.value }))
-                      }
-                      fullWidth
-                    />
-                    <TextField
-                      label="Days"
-                      type="number"
-                      value={newTier.duration_days}
-                      onChange={(event) =>
-                        setNewTier((prev) => ({ ...prev, duration_days: event.target.value }))
-                      }
-                      fullWidth
-                    />
-                  </Stack>
-                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-                    <TextField
-                      label="Reseller Price"
-                      type="number"
-                      value={newTier.reseller_price}
-                      onChange={(event) =>
-                        setNewTier((prev) => ({ ...prev, reseller_price: event.target.value }))
-                      }
-                      fullWidth
-                    />
-                    <TextField
-                      label="Reset Limit"
-                      type="number"
-                      value={newTier.hwid_reset_limit}
-                      onChange={(event) =>
-                        setNewTier((prev) => ({ ...prev, hwid_reset_limit: event.target.value }))
-                      }
-                      fullWidth
-                    />
-                  </Stack>
+                  {newTiers.map((tier, index) => (
+                    <Card
+                      key={`${tier.id || 'new'}-${index}`}
+                      sx={{ bgcolor: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)' }}
+                    >
+                      <CardContent>
+                        <Stack spacing={2}>
+                          <Stack direction="row" justifyContent="space-between" sx={{ alignItems: 'center' }}>
+                            <Typography variant="subtitle2">Tier #{index + 1}</Typography>
+                            {newTiers.length > 1 ? (
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                onClick={() => {
+                                  if (tier.id) {
+                                    setDeletedTierIds((prev) => [...prev, tier.id])
+                                  }
+                                  setNewTiers((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            ) : null}
+                          </Stack>
+                          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                            <TextField
+                              label="Tier Name"
+                              value={tier.name}
+                              onChange={(event) =>
+                                setNewTiers((prev) =>
+                                  prev.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, name: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              fullWidth
+                            />
+                            <TextField
+                              label="Price"
+                              type="number"
+                              value={tier.price}
+                              onChange={(event) =>
+                                setNewTiers((prev) =>
+                                  prev.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, price: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              fullWidth
+                            />
+                            <TextField
+                              label="Days"
+                              type="number"
+                              value={tier.duration_days}
+                              onChange={(event) =>
+                                setNewTiers((prev) =>
+                                  prev.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, duration_days: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              fullWidth
+                            />
+                          </Stack>
+                          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                            <TextField
+                              label="Reseller Price"
+                              type="number"
+                              value={tier.reseller_price}
+                              onChange={(event) =>
+                                setNewTiers((prev) =>
+                                  prev.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, reseller_price: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              fullWidth
+                            />
+                            <TextField
+                              label="Reset Limit"
+                              type="number"
+                              value={tier.hwid_reset_limit}
+                              onChange={(event) =>
+                                setNewTiers((prev) =>
+                                  prev.map((item, itemIndex) =>
+                                    itemIndex === index ? { ...item, hwid_reset_limit: event.target.value } : item,
+                                  ),
+                                )
+                              }
+                              fullWidth
+                            />
+                          </Stack>
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </Stack>
               </CardContent>
             </Card>
