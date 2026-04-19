@@ -28,7 +28,7 @@ DEFAULT_SETTINGS = {
     "pay_proof_text": "Payment proof bhejne ke liye screenshot support ko forward karein.",
     "id_help_text": "Apna product/account ID bhejo, team usko verify kar degi.",
     "bot_username": "NS_seller_bot_bot",
-    "bot_token": "8612559792:AAHSg6Wyuiegc3zY9NYXz_kZ8GFLK8JgaS4",
+    "bot_token": "8685359931:AAG47W9yToeKoNf53dsOLZuiwH92lyU0rqs",
     "payment_upi_id": "",
     "payment_qr": "",
     "payment_mode_upi": "1",
