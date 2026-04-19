@@ -34,6 +34,8 @@ const fields = [
 
 export default function CustomizationTab() {
   const [settings, setSettings] = useState({})
+  const [adminPassword, setAdminPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
 
   useEffect(() => {
     apiGet('/settings').then(setSettings).catch(() => setSettings({}))
@@ -42,6 +44,13 @@ export default function CustomizationTab() {
   const saveSettings = async () => {
     await apiSend('/settings', 'PUT', settings)
     notifySettingsUpdated(settings)
+  }
+
+  const saveAdminPassword = async () => {
+    if (!adminPassword || adminPassword !== confirmPassword) return
+    await apiSend('/admin-password', 'POST', { password: adminPassword })
+    setAdminPassword('')
+    setConfirmPassword('')
   }
 
   return (
@@ -72,6 +81,33 @@ export default function CustomizationTab() {
           </CardContent>
         </Card>
       ))}
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Typography variant="h6">Admin Panel Password</Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Login password yahin se change kar sakte ho.
+            </Typography>
+            <TextField
+              label="New Password"
+              type="password"
+              value={adminPassword}
+              onChange={(event) => setAdminPassword(event.target.value)}
+              fullWidth
+            />
+            <TextField
+              label="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              fullWidth
+            />
+            <Button variant="contained" onClick={saveAdminPassword} disabled={!adminPassword || adminPassword !== confirmPassword}>
+              Update Admin Password
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
       <Button variant="contained" onClick={saveSettings}>
         Save All
       </Button>
