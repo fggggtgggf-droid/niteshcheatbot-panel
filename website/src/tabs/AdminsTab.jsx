@@ -12,7 +12,7 @@ import {
 } from '@mui/material'
 import { apiGet, apiSend } from '../api.js'
 
-const emptyAdmin = { telegram_id: '', name: '', username: '', login_email: '', login_password: '', panel_role: 'admin', parent_admin_id: '', plan_id: '', custom_days: 30, notes: '' }
+const emptyAdmin = { telegram_id: '', name: '', username: '', panel_role: 'admin', parent_admin_id: '', plan_id: '', custom_days: 30, notes: '' }
 
 export default function AdminsTab({ role }) {
   const [plans, setPlans] = useState([])
@@ -34,8 +34,6 @@ export default function AdminsTab({ role }) {
             username: item.username || '',
             parent_admin_id: item.parent_admin_id || '',
             panel_role: item.panel_role || 'admin',
-            login_email: item.login_email || '',
-            login_password: '',
             custom_days: Number(item.custom_days || 30),
             subscription_price: Number(item.subscription_price || 0),
             notes: item.notes || '',
@@ -62,11 +60,10 @@ export default function AdminsTab({ role }) {
   }, [admins])
 
   const createAdmin = async () => {
-    if (!adminForm.telegram_id.trim() && !adminForm.login_email.trim()) return
+    if (!adminForm.telegram_id.trim()) return
     await apiSend('/admins', 'POST', {
       ...adminForm,
       telegram_id: adminForm.telegram_id.trim(),
-      login_email: adminForm.login_email.trim(),
       custom_days: Number(adminForm.custom_days || 30),
     })
     setAdminForm(emptyAdmin)
@@ -153,23 +150,6 @@ export default function AdminsTab({ role }) {
                   </Grid>
                   <Grid item xs={12} md={6}>
                     <TextField
-                      label="Login Email"
-                      value={adminForm.login_email}
-                      onChange={(event) => setAdminForm((current) => ({ ...current, login_email: event.target.value }))}
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      label="Login Password"
-                      type="password"
-                      value={adminForm.login_password}
-                      onChange={(event) => setAdminForm((current) => ({ ...current, login_password: event.target.value }))}
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
                       label="Parent Admin ID"
                       value={adminForm.parent_admin_id}
                       onChange={(event) => setAdminForm((current) => ({ ...current, parent_admin_id: event.target.value }))}
@@ -248,9 +228,6 @@ export default function AdminsTab({ role }) {
                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                           TG: {admin.telegram_id} {admin.username ? `| @${admin.username}` : ''}
                         </Typography>
-                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                          Login: {admin.login_email || '-'}
-                        </Typography>
                       </Stack>
                       <Stack direction="row" spacing={1}>
                         <Chip label={admin.status} color={admin.status === 'active' ? 'success' : 'warning'} />
@@ -298,33 +275,6 @@ export default function AdminsTab({ role }) {
                             setEditAdmins((current) => ({
                               ...current,
                               [admin.id]: { ...(current[admin.id] || {}), username: event.target.value },
-                            }))
-                          }
-                          fullWidth
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          label="Login Email"
-                          value={editAdmins[admin.id]?.login_email || ''}
-                          onChange={(event) =>
-                            setEditAdmins((current) => ({
-                              ...current,
-                              [admin.id]: { ...(current[admin.id] || {}), login_email: event.target.value },
-                            }))
-                          }
-                          fullWidth
-                        />
-                      </Grid>
-                      <Grid item xs={12} md={4}>
-                        <TextField
-                          label="New Password"
-                          type="password"
-                          value={editAdmins[admin.id]?.login_password || ''}
-                          onChange={(event) =>
-                            setEditAdmins((current) => ({
-                              ...current,
-                              [admin.id]: { ...(current[admin.id] || {}), login_password: event.target.value },
                             }))
                           }
                           fullWidth
