@@ -76,6 +76,12 @@ def settings():
 
 
 def media_input(media: str, fallback_name: str = "upload.jpg"):
+    if hasattr(media, "read"):
+        try:
+            media.seek(0)
+        except Exception:
+            pass
+        return media
     text = str(media or "").strip()
     if text.startswith("data:") and ";base64," in text:
         meta, encoded = text.split(",", 1)
@@ -600,8 +606,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "first_name": user.first_name or "Friend",
             "username": user.username or "",
             "role": "user",
-            "balance": 0,
-            "captcha_verified": 0,
         },
     )
     current_user = get_user_by_telegram_id(user.id)

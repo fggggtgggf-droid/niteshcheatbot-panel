@@ -189,16 +189,29 @@ def create_user(payload: dict[str, Any]) -> str:
     if telegram_id:
         for user in list_collection("users"):
             if str(user.get("telegram_id", "")) == telegram_id:
+                updates: dict[str, Any] = {}
+                if "first_name" in payload:
+                    updates["first_name"] = payload.get("first_name", user.get("first_name", "User"))
+                if "username" in payload:
+                    updates["username"] = payload.get("username", user.get("username", ""))
+                if "role" in payload:
+                    updates["role"] = payload.get("role", user.get("role", "user"))
+                if "balance" in payload:
+                    updates["balance"] = float(payload.get("balance", user.get("balance", 0)))
+                if "notes" in payload:
+                    updates["notes"] = payload.get("notes", user.get("notes", ""))
+                if "is_banned" in payload:
+                    updates["is_banned"] = int(payload.get("is_banned", user.get("is_banned", 0)) or 0)
+                if "captcha_verified" in payload:
+                    updates["captcha_verified"] = int(payload.get("captcha_verified", user.get("captcha_verified", 0)) or 0)
+                if "captcha_passed_at" in payload:
+                    updates["captcha_passed_at"] = payload.get("captcha_passed_at", user.get("captcha_passed_at", ""))
+                if not updates:
+                    return str(user["id"])
                 update_item(
                     "users",
                     str(user["id"]),
-                    {
-                        "first_name": payload.get("first_name", user.get("first_name", "User")),
-                        "username": payload.get("username", user.get("username", "")),
-                        "role": payload.get("role", user.get("role", "user")),
-                        "balance": float(payload.get("balance", user.get("balance", 0))),
-                        "notes": payload.get("notes", user.get("notes", "")),
-                    },
+                    updates,
                 )
                 return str(user["id"])
     defaults = {

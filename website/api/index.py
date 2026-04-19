@@ -1053,7 +1053,16 @@ def payment_requests_approve(item_id: str):
         current_balance = float(user.get("balance", 0) or 0)
         new_balance = current_balance + float(req_item.get("amount", 0) or 0)
         update_item("users", str(user["id"]), {"balance": new_balance})
-        update_item("payment_requests", item_id, {"status": "approved", "updated_at": now_str()})
+        update_item(
+            "payment_requests",
+            item_id,
+            {
+                "status": "approved",
+                "updated_at": now_str(),
+                "user_balance": new_balance,
+                "approved_amount": float(req_item.get("amount", 0) or 0),
+            },
+        )
         if telegram_id:
             send_telegram_message(telegram_id, f"Deposit approved.\nNew wallet balance: Rs {int(new_balance)}")
         return jsonify({"status": "ok", "balance": new_balance})
