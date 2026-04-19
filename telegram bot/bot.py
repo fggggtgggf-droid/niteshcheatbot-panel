@@ -104,6 +104,13 @@ def get_admin_access(telegram_id: int) -> dict:
         return {"active": False, "reason": "lookup_failed", "record": {}}
 
 
+def admin_contact() -> dict:
+    try:
+        return api_get("/admin-contact")
+    except Exception:
+        return {"username": "", "telegram_id": "", "name": "Admin"}
+
+
 def is_owner(telegram_id: int) -> bool:
     access = get_admin_access(telegram_id)
     record = access.get("record") or {}
@@ -125,6 +132,25 @@ def list_owner_plans():
 
 def current_admin_record(telegram_id: int) -> dict:
     return get_admin_access(telegram_id).get("record") or {}
+
+
+def sync_admin_profile(user) -> None:
+    try:
+        access = get_admin_access(user.id)
+        record = access.get("record") or {}
+        if not record or not record.get("id"):
+            return
+        payload = {}
+        username = str(getattr(user, "username", "") or "").strip()
+        first_name = str(getattr(user, "first_name", "") or "").strip()
+        if username and username != str(record.get("username", "")).strip():
+            payload["username"] = username
+        if first_name and first_name != str(record.get("name", "")).strip():
+            payload["name"] = first_name
+        if payload:
+            api_send(f"/admins/{record.get('id')}", "PATCH", payload)
+    except Exception:
+        return
 
 
 def system_status() -> dict:
@@ -196,6 +222,17 @@ def get_product_media_url(product: dict) -> str:
 
 def wallet_text(telegram_id: int) -> str:
     return f"Wallet Balance: Rs {int(get_wallet_balance(telegram_id))}"
+
+
+def admin_contact_line() -> str:
+    contact = admin_contact()
+    username = str(contact.get("username", "")).strip()
+    if username:
+        return f"Contact Admin: @{username}"
+    telegram_id = str(contact.get("telegram_id", "")).strip()
+    if telegram_id:
+        return f"Contact Admin ID: {telegram_id}"
+    return "Contact Admin for assistance."
 
 
 def build_reply_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
@@ -283,22 +320,14 @@ async def send_inactive_admin_notice(message, telegram_id: int) -> None:
     record = access.get("record") or {}
     await message.reply_text(
         premium_card(
-            "SUBSCRIPTION EXPIRED",
+            "ADMIN ACCESS PAUSED",
             [
                 f"Status: {record.get('status', access.get('reason', 'inactive'))}",
-                f"Plan: {record.get('plan_name', '-')}",
-                f"Days Left: {record.get('days_left', 0)}",
-                f"Expiry: {record.get('expires_at', '-')}",
-                "Renew your admin panel to continue.",
+                "Your admin access is currently paused.",
+                admin_contact_line(),
             ],
         ),
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("Renew Panel", callback_data="panelrenew:start")],
-                [InlineKeyboardButton("Open Membership Panel", url=PUBLIC_PANEL_URL)],
-            ]
-        ),
     )
 
 
@@ -309,7 +338,7 @@ async def send_maintenance_notice(message) -> None:
             "BOT IN MAINTENANCE",
             [
                 status.get("maintenance_message", "Bot is temporarily unavailable."),
-                "Super admin subscription is not active.",
+                admin_contact_line(),
                 "Please try again later.",
             ],
         ),
@@ -345,6 +374,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_user or not update.message:
         return
     user = update.effective_user
+    if is_admin(user.id) or is_owner(user.id):
+        sync_admin_profile(user)
     api_send(
         "/users",
         "POST",
@@ -547,6 +578,8 @@ async def on_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.effective_user:
         return
+    if is_admin(update.effective_user.id) or is_owner(update.effective_user.id):
+        sync_admin_profile(update.effective_user)
     if not user_bot_available(update.effective_user.id):
         await send_maintenance_notice(update.message)
         return
@@ -615,12 +648,27 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if text == "deposit now":
         pay_settings = api_get("/payment-settings")
         qr = str(pay_settings.get("qr", "")).strip()
+        upi_id = str(pay_settings.get("upi_id", "")).strip()
         if int(pay_settings.get("use_gateway", 0) or 0) == 1:
             await update.message.reply_text("Gateway mode enabled. Deposit amount choose karke payment request submit karo.")
         elif qr:
-            await update.message.reply_photo(photo=media_input(qr, "payment-qr.jpg"), caption="Deposit and send payment reference number.")
+            caption = "Deposit and send payment reference number."
+            if upi_id:
+                caption = f"Pay using UPI ID: {upi_id}\n\nDeposit and send payment reference number."
+            await update.message.reply_photo(photo=media_input(qr, "payment-qr.jpg"), caption=caption)
+        elif upi_id:
+            await update.message.reply_text(f"Deposit Now\nUPI ID: {upi_id}\n\nPayment karke transaction reference bhejo.")
         else:
-            await update.message.reply_text("QR not configured by admin.")
+            await update.message.reply_text(
+                premium_card(
+                    "DEPOSIT MAINTENANCE",
+                    [
+                        "Deposit abhi maintenance mein hai.",
+                        admin_contact_line(),
+                    ],
+                ),
+                parse_mode="HTML",
+            )
         return
     if text == "support":
         app_settings = settings()
@@ -662,8 +710,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         record = access.get("record") or {}
         await update.message.reply_text(
             f"Admin access not active.\nStatus: {record.get('status', access.get('reason', 'inactive'))}\n"
-            f"Expiry: {record.get('expires_at', '-')}\nContact owner to renew.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Renew Panel", callback_data="panelrenew:start")]]),
+            f"{admin_contact_line()}",
         )
         return
 
@@ -671,6 +718,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def show_deposit_prompt(query, user_id: int, needed: int = 0):
     pay_settings = api_get("/payment-settings")
     qr = str(pay_settings.get("qr", "")).strip()
+    upi_id = str(pay_settings.get("upi_id", "")).strip()
     gateway_enabled = int(pay_settings.get("use_gateway", 0) or 0) == 1
     lines = [wallet_text(user_id)]
     if needed > 0:
@@ -678,6 +726,8 @@ async def show_deposit_prompt(query, user_id: int, needed: int = 0):
     if gateway_enabled:
         lines.append("Gateway mode enabled. Choose amount and submit your payment reference after payment.")
     else:
+        if upi_id:
+            lines.append(f"UPI ID: {upi_id}")
         lines.append("Choose deposit amount and submit payment ref.")
     markup = InlineKeyboardMarkup(
         [
@@ -689,8 +739,20 @@ async def show_deposit_prompt(query, user_id: int, needed: int = 0):
     await delete_previous(query)
     if qr and not gateway_enabled:
         await query.message.reply_photo(photo=media_input(qr, "payment-qr.jpg"), caption=premium_card("DEPOSIT NOW", lines), parse_mode="HTML", reply_markup=markup)
-    else:
+    elif upi_id and not gateway_enabled:
         await query.message.reply_text(premium_card("DEPOSIT NOW", lines), parse_mode="HTML", reply_markup=markup)
+    else:
+        await query.message.reply_text(
+            premium_card(
+                "DEPOSIT MAINTENANCE",
+                [
+                    "Deposit abhi maintenance mein hai.",
+                    admin_contact_line(),
+                ],
+            ),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back to Menu", callback_data="back:menu")]]),
+        )
 
 
 async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -698,6 +760,8 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not query or not query.from_user:
         return
     await query.answer()
+    if is_admin(query.from_user.id) or is_owner(query.from_user.id):
+        sync_admin_profile(query.from_user)
     current_user = get_user_by_telegram_id(query.from_user.id)
     if current_user and int(current_user.get("is_banned", 0)) == 1:
         await query.message.reply_text("You are banned.")
@@ -845,52 +909,16 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
 
     if data == "panelrenew:start":
-        record = current_admin_record(query.from_user.id)
-        if not record:
-            await query.message.reply_text("Admin record not found.")
-            return
-        pay_settings = api_get("/payment-settings")
-        gateway_enabled = int(pay_settings.get("use_gateway", 0) or 0) == 1
-        if gateway_enabled:
-            await query.message.reply_text(
-                premium_card(
-                    "RENEW MEMBERSHIP",
-                    [
-                        f"Plan: {record.get('plan_name', 'Membership')}",
-                        f"Days Left: {record.get('days_left', 0)}",
-                        "Gateway mode is enabled.",
-                        "Open the website membership page to continue payment.",
-                    ],
-                ),
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Open Membership Panel", url=PUBLIC_PANEL_URL)]]),
-            )
-            return
-        try:
-            renew = api_send("/panel-renew-requests", "POST", {"telegram_id": str(query.from_user.id)})
-        except Exception:
-            await query.message.reply_text("Renew request already pending or unavailable.")
-            return
-        qr = str(pay_settings.get("qr", "")).strip()
-        caption = (
-            f"Panel Renew Request Created\n"
-            f"Plan: {renew.get('plan_name', record.get('plan_name', 'Renewal'))}\n"
-            f"Days: {renew.get('renew_days', record.get('custom_days', 30))}\n"
-            f"Amount: Rs {int(float(renew.get('amount', 0) or 0))}\n"
-            f"Request ID: {renew.get('id')}\n\n"
-            "Payment karke reference bhejo."
-        )
-        context.user_data["awaiting_upi_ref_for"] = str(renew.get("id"))
-        if qr:
-            try:
-                await query.message.reply_photo(photo=media_input(qr, "payment-qr.jpg"), caption=caption)
-            except Exception:
-                await query.message.reply_text(caption)
-        else:
-            await query.message.reply_text(caption)
-        await send_admin_alert(
-            context,
-            f"New panel renew request\nRequest ID: {renew.get('id')}\nAdmin TG: {query.from_user.id}\nPlan: {renew.get('plan_name')}\nAmount: Rs {int(float(renew.get('amount', 0) or 0))}",
+        await query.message.reply_text(
+            premium_card(
+                "NO RENEWAL REQUIRED",
+                [
+                    "Admin membership purchase removed.",
+                    "Panel will keep working normally.",
+                    admin_contact_line(),
+                ],
+            ),
+            parse_mode="HTML",
         )
         return
 
