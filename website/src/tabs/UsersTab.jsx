@@ -1,18 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Modal,
-  Select,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material'
+import { Box, Button, Card, CardContent, FormControl, InputLabel, MenuItem, Modal, Select, Stack, TextField, Typography } from '@mui/material'
 import { apiGet, apiSend } from '../api.js'
 
 const modalStyle = {
@@ -32,16 +19,6 @@ export default function UsersTab() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
   const [editingUser, setEditingUser] = useState(null)
-  const [createOpen, setCreateOpen] = useState(false)
-  const [newUser, setNewUser] = useState({
-    telegram_id: '',
-    first_name: '',
-    username: '',
-    role: 'user',
-    balance: 0,
-    notes: '',
-  })
-
   const refresh = async () => {
     setUsers(await apiGet('/users'))
   }
@@ -90,11 +67,6 @@ export default function UsersTab() {
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           View and manage all registered users
         </Typography>
-      </Stack>
-      <Stack direction="row" justifyContent="flex-end">
-        <Button variant="contained" onClick={() => setCreateOpen(true)}>
-          Create User
-        </Button>
       </Stack>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
         <Card sx={{ flex: 1 }}>
@@ -224,74 +196,6 @@ export default function UsersTab() {
               </Stack>
             </Stack>
           ) : null}
-        </Box>
-      </Modal>
-
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)}>
-        <Box sx={modalStyle}>
-          <Stack spacing={2}>
-            <Typography variant="h6">Create User</Typography>
-            <TextField
-              label="Telegram ID"
-              value={newUser.telegram_id}
-              onChange={(event) => setNewUser((prev) => ({ ...prev, telegram_id: event.target.value }))}
-              fullWidth
-            />
-            <TextField
-              label="Name"
-              value={newUser.first_name}
-              onChange={(event) => setNewUser((prev) => ({ ...prev, first_name: event.target.value }))}
-              fullWidth
-            />
-            <TextField
-              label="Username"
-              value={newUser.username}
-              onChange={(event) => setNewUser((prev) => ({ ...prev, username: event.target.value }))}
-              fullWidth
-            />
-            <FormControl fullWidth>
-              <InputLabel>Role</InputLabel>
-              <Select
-                label="Role"
-                value={newUser.role}
-                onChange={(event) => setNewUser((prev) => ({ ...prev, role: event.target.value }))}
-              >
-                <MenuItem value="user">User</MenuItem>
-                <MenuItem value="reseller">Reseller</MenuItem>
-                <MenuItem value="admin">Admin</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              label="Fund / Balance"
-              type="number"
-              value={newUser.balance}
-              onChange={(event) => setNewUser((prev) => ({ ...prev, balance: Number(event.target.value) }))}
-              fullWidth
-            />
-            <Stack direction="row" spacing={2} justifyContent="flex-end">
-              <Button variant="outlined" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="contained"
-                onClick={async () => {
-                  await apiSend('/users', 'POST', newUser)
-                  setCreateOpen(false)
-                  setNewUser({
-                    telegram_id: '',
-                    first_name: '',
-                    username: '',
-                    role: 'user',
-                    balance: 0,
-                    notes: '',
-                  })
-                  refresh()
-                }}
-              >
-                Create
-              </Button>
-            </Stack>
-          </Stack>
         </Box>
       </Modal>
     </Stack>

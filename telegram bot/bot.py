@@ -481,35 +481,36 @@ async def send_captcha_prompt(message, context: ContextTypes.DEFAULT_TYPE, user_
 
 def premium_card(title: str, lines: list[str]) -> str:
     app_settings = settings()
-    card_title = app_settings.get("bot_card_title", "SELLER BOT")
-    tagline = app_settings.get("bot_card_tagline", "")
-    body = "\n".join(f"┃ {html.escape(str(line))}" for line in lines if str(line).strip())
-    header = [
-        "╭━━━━━━━━━━━━━✦",
-        f"┃ <b>{html.escape(card_title)}</b>",
-        f"┃ <b>{html.escape(title)}</b>",
-    ]
+    card_title = str(app_settings.get("bot_card_title", "SELLER BOT") or "SELLER BOT").strip()
+    tagline = str(app_settings.get("bot_card_tagline", "") or "").strip()
+    safe_title = html.escape(str(title or "").strip())
+    header = []
+    if card_title:
+        header.append(f"🔥 <b>{html.escape(card_title)}</b> 🔥")
+    if safe_title and safe_title.lower() != card_title.lower():
+        header.append(f"✨ <b>{safe_title}</b> ✨")
     if tagline:
-        header.append(f"┃ {html.escape(tagline)}")
-    footer = "╰━━━━━━━━━━━━━✦"
-    return "\n".join(header + ([body] if body else []) + [footer])
+        header.append(html.escape(tagline))
+    body = [html.escape(str(line)) for line in lines if str(line).strip()]
+    content = header + ([""] if header and body else []) + body
+    return "\n".join(content)
 
 
 def premium_card_html(title: str, lines: list[str]) -> str:
     app_settings = settings()
-    card_title = html.escape(str(app_settings.get("bot_card_title", "SELLER BOT") or "SELLER BOT"))
-    tagline = html.escape(str(app_settings.get("bot_card_tagline", "") or ""))
-    safe_title = html.escape(str(title or ""))
-    body = "\n".join(f"┃ {line}" for line in lines if str(line).strip())
-    header = [
-        "╭━━━━━━━━━━━━━✦",
-        f"┃ <b>{card_title}</b>",
-        f"┃ <b>{safe_title}</b>",
-    ]
+    card_title = str(app_settings.get("bot_card_title", "SELLER BOT") or "SELLER BOT").strip()
+    tagline = str(app_settings.get("bot_card_tagline", "") or "").strip()
+    safe_title = str(title or "").strip()
+    header = []
+    if card_title:
+        header.append(f"🔥 <b>{html.escape(card_title)}</b> 🔥")
+    if safe_title and safe_title.lower() != card_title.lower():
+        header.append(f"✨ <b>{html.escape(safe_title)}</b> ✨")
     if tagline:
-        header.append(f"┃ {tagline}")
-    footer = "╰━━━━━━━━━━━━━✦"
-    return "\n".join(header + ([body] if body else []) + [footer])
+        header.append(html.escape(tagline))
+    body = [str(line) for line in lines if str(line).strip()]
+    content = header + ([""] if header and body else []) + body
+    return "\n".join(content)
 
 
 def purchase_success_text(order: dict, telegram_id: int) -> str:
@@ -659,8 +660,8 @@ async def send_deposit_checkout_message(message, user_id: int, amount: int, requ
         lines.append("✅ Pay this amount, then tap I Have Paid.")
     markup = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("✅ I Have Paid", callback_data=f"deposit_paid:{request_id}")],
-            [InlineKeyboardButton("❌ Cancel", callback_data=f"deposit_cancel:{request_id}")],
+            [InlineKeyboardButton("I Have Paid", callback_data=f"deposit_paid:{request_id}")],
+            [InlineKeyboardButton("Cancel", callback_data=f"deposit_cancel:{request_id}")],
         ]
     )
     caption = premium_card_html("PAYMENT CHECKOUT", lines)
@@ -1691,9 +1692,9 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         if needed > 0:
             caption = f"{caption}\n\n✅ Need Rs {needed} more. Tap Deposit Now to continue."
-            buttons = [[InlineKeyboardButton("💳 Deposit Now", callback_data="deposit_now")], [InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")]]
+            buttons = [[InlineKeyboardButton("Deposit Now", callback_data="deposit_now")], [InlineKeyboardButton("Back to Shop", callback_data="shop_now")]]
         else:
-            buttons = [[InlineKeyboardButton("🛒 Buy From Wallet", callback_data=f"buywallet:{plan_id}")], [InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")]]
+            buttons = [[InlineKeyboardButton("Buy From Wallet", callback_data=f"buywallet:{plan_id}")], [InlineKeyboardButton("Back to Shop", callback_data="shop_now")]]
         await delete_previous(query)
         media_url = get_product_media_url(product or {})
         if media_url:
@@ -1852,7 +1853,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         ],
                     ),
                     parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀ Back to Menu", callback_data="back:menu")]]),
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back to Menu", callback_data="back:menu")]]),
                 )
                 return
             if action == "refer_earn":
