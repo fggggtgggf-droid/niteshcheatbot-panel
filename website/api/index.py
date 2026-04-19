@@ -576,6 +576,23 @@ def admin_contact_get():
     return jsonify(primary_admin_contact())
 
 
+@app.post("/api/bot-events/start-check")
+def bot_start_check():
+    payload = json_body()
+    telegram_id = str(payload.get("telegram_id", "")).strip()
+    if not telegram_id:
+        return jsonify({"allow": False, "reason": "missing_telegram_id"}), 400
+    cooldown_seconds = int(payload.get("cooldown", 8) or 8)
+    now_ts = int(time.time())
+    item_id = f"start_{telegram_id}"
+    existing = get_item("bot_runtime", item_id) or {}
+    last_ts = int(existing.get("last_ts", 0) or 0)
+    if last_ts and now_ts - last_ts < cooldown_seconds:
+        return jsonify({"allow": False, "reason": "cooldown", "remaining": cooldown_seconds - (now_ts - last_ts)})
+    update_item("bot_runtime", item_id, {"id": item_id, "telegram_id": telegram_id, "last_ts": now_ts, "updated_at": now_str()})
+    return jsonify({"allow": True, "cooldown": cooldown_seconds})
+
+
 @app.post("/api/admins/link-chat")
 def admins_link_chat():
     payload = json_body()
