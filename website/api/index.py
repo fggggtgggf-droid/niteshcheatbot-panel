@@ -1179,12 +1179,16 @@ def purchase_with_wallet():
             "key_type": str(license_item.get("key_type", "pin")),
             "status": "active",
             "amount": price,
+            "plan_name": str(plan.get("name", "")),
+            "duration_days": int(plan.get("duration_days", 0) or 0),
+            "duration_label": str(plan.get("name", "")),
             "reset_limit": int(license_item.get("hwid_reset_limit", 0) or 0),
             "reset_used": 0,
             "created_at": now_str(),
         },
     )
-    return jsonify({"status": "ok", "order_id": order_id, "new_balance": balance - price})
+    order = get_item("orders", order_id) or {}
+    return jsonify({"status": "ok", "order_id": order_id, "new_balance": balance - price, "order": order})
 
 
 @app.get("/api/orders")

@@ -6,6 +6,7 @@ import html
 import json
 import logging
 import os
+import re
 import socket
 import time
 import urllib.parse
@@ -47,6 +48,15 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 _CACHE: dict[str, dict] = {}
 _INSTANCE_LOCK: socket.socket | None = None
+EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001FAFF"
+    "\U00002700-\U000027BF"
+    "\U000024C2-\U0001F251"
+    "\u2600-\u26FF"
+    "]+",
+    flags=re.UNICODE,
+)
 
 
 def bot_token() -> str:
@@ -279,7 +289,8 @@ def wallet_text(telegram_id: int) -> str:
 
 
 def highlighted_label(label: str) -> str:
-    clean = str(label or "").strip()
+    clean = EMOJI_RE.sub("", str(label or "")).replace("•", " ").strip()
+    clean = re.sub(r"\s+", " ", clean)
     return clean
 
 
@@ -413,7 +424,7 @@ def build_products_menu() -> InlineKeyboardMarkup:
         rows.append(current)
     for button in filter_buttons("shop"):
         rows.append([InlineKeyboardButton(highlighted_label(button["label"]), callback_data=f"btn:{button['id']}")])
-    rows.append([InlineKeyboardButton("◀ Back to Menu", callback_data="back:menu")])
+    rows.append([InlineKeyboardButton("Back to Menu", callback_data="back:menu")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -423,8 +434,8 @@ def build_product_menu(product_id: str) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(highlighted_label(action["label"]), url=action["url"])])
     for button in filter_buttons("product", product_id=product_id):
         rows.append([InlineKeyboardButton(highlighted_label(button["label"]), callback_data=f"btn:{button['id']}")])
-    rows.append([InlineKeyboardButton("🛒 Buy This Now", callback_data=f"plans:{product_id}")])
-    rows.append([InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")])
+    rows.append([InlineKeyboardButton("Buy This Now", callback_data=f"plans:{product_id}")])
+    rows.append([InlineKeyboardButton("Back to Shop", callback_data="shop_now")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -432,11 +443,11 @@ def build_plan_menu(product_id: str, telegram_id: int) -> InlineKeyboardMarkup:
     rows = []
     for plan in list_plans(product_id):
         price = int(plan_price_for_user(plan, telegram_id))
-        label = f"💠 {plan['name']} • Rs {price}"
+        label = f"{plan['name']} - Rs {price}"
         if int(plan.get("stock", 0)) <= 0:
-            label = f"{label} • Out of Stock"
+            label = f"{label} - Out of Stock"
         rows.append([InlineKeyboardButton(highlighted_label(label), callback_data=f"plan:{plan['id']}")])
-    rows.append([InlineKeyboardButton("◀ Back to Shop", callback_data="shop_now")])
+    rows.append([InlineKeyboardButton("Back to Shop", callback_data="shop_now")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -453,12 +464,16 @@ async def send_captcha_prompt(message, context: ContextTypes.DEFAULT_TYPE, user_
     challenge = str(1000 + int(time.time()) % 9000)
     context.user_data["captcha_expected"] = challenge
     await message.reply_text(
-        premium_card(
-            "CAPTCHA VERIFICATION",
+        "\n".join(
             [
-                "Please enter the number shown below.",
-                f"Write this number and reply: {challenge}",
-            ],
+                "🤖 <b>Captcha Verification</b>",
+                "",
+                "Please type the number you see below:",
+                "",
+                f"👉 <b>Captcha code - </b> <code>{challenge}</code>",
+                "",
+                "(Write this number and reply)",
+            ]
         ),
         parse_mode="HTML",
     )
@@ -495,6 +510,36 @@ def premium_card_html(title: str, lines: list[str]) -> str:
         header.append(f"┃ {tagline}")
     footer = "╰━━━━━━━━━━━━━✦"
     return "\n".join(header + ([body] if body else []) + [footer])
+
+
+def purchase_success_text(order: dict, telegram_id: int) -> str:
+    lines = [
+        "🎉 <b>Congratulations, purchase completed successfully.</b>",
+        "",
+        f"Status: {html.escape(current_user_role(telegram_id).title())}",
+        wallet_text(telegram_id),
+        f"Order ID: <code>{html.escape(str(order.get('id', order.get('order_id', '-'))))}</code>",
+        f"Plan: {html.escape(str(order.get('plan_name', order.get('plan_id', '-'))))}",
+        f"Valid For: {html.escape(str(order.get('duration_label', order.get('duration_days', '-'))))}",
+        "",
+        "<b>License Details</b>",
+    ]
+    key_type = str(order.get("key_type", "pin") or "pin").strip().lower()
+    if key_type == "credentials":
+        username = str(order.get("account_username", "") or "").strip()
+        password = str(order.get("account_password", "") or "").strip()
+        if username:
+            lines.append(f"Username: <code>{html.escape(username)}</code>")
+        if password:
+            lines.append(f"Password: <code>{html.escape(password)}</code>")
+    else:
+        pin_code = str(order.get("pin_code", "") or order.get("license_key", "") or "-").strip()
+        lines.append(f"Key: <code>{html.escape(pin_code)}</code>")
+    if str(order.get("license_key", "") or "").strip() and key_type == "credentials":
+        lines.append(f"License: <code>{html.escape(str(order.get('license_key')))}</code>")
+    lines.append("")
+    lines.append("Tap and hold the code to copy.")
+    return "\n".join(lines)
 
 
 async def send_inactive_admin_notice(message, telegram_id: int) -> None:
@@ -554,9 +599,9 @@ async def send_admin_alert_with_markup(context: ContextTypes.DEFAULT_TYPE, text:
 def deposit_method_rows(needed: int = 0) -> list[list[InlineKeyboardButton]]:
     rows: list[list[InlineKeyboardButton]] = []
     if needed > 0:
-        rows.append([InlineKeyboardButton(f"💰 Add Rs {needed} Now", callback_data=f"deposit_method_upi:{needed}")])
-    rows.append([InlineKeyboardButton("💳 Pay via UPI", callback_data="deposit_method_upi")])
-    rows.append([InlineKeyboardButton("◀ Back to Menu", callback_data="back:menu")])
+        rows.append([InlineKeyboardButton(f"Add Rs {needed} Now", callback_data=f"deposit_method_upi:{needed}")])
+    rows.append([InlineKeyboardButton("Pay via UPI", callback_data="deposit_method_upi")])
+    rows.append([InlineKeyboardButton("Back to Menu", callback_data="back:menu")])
     return rows
 
 
@@ -1444,6 +1489,66 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         return
 
+    if data == "history:menu":
+        lines = [role_text(query.from_user.id), wallet_text(query.from_user.id), "Choose the history you want to view."]
+        await delete_previous(query)
+        await query.message.reply_text(
+            premium_card("ALL HISTORY", lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [InlineKeyboardButton("Deposit History", callback_data="history:deposits")],
+                    [InlineKeyboardButton("Selling History", callback_data="history:sales")],
+                    [InlineKeyboardButton("Back to Menu", callback_data="back:menu")],
+                ]
+            ),
+        )
+        return
+
+    if data == "history:deposits":
+        payments = sorted(
+            api_get(f"/payment-requests?telegram_id={urllib.parse.quote(str(query.from_user.id))}"),
+            key=lambda item: str(item.get("id", "")),
+            reverse=True,
+        )
+        lines = [role_text(query.from_user.id), wallet_text(query.from_user.id)]
+        if payments:
+            lines.extend(
+                [
+                    f"Deposit #{item.get('id')} | {item.get('status', '-')} | Rs {int(float(item.get('amount', 0) or 0))}"
+                    for item in payments[:12]
+                ]
+            )
+        else:
+            lines.append("No deposit history yet.")
+        await delete_previous(query)
+        await query.message.reply_text(
+            premium_card("DEPOSIT HISTORY", lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back to History", callback_data="history:menu")], [InlineKeyboardButton("Back to Menu", callback_data="back:menu")]]),
+        )
+        return
+
+    if data == "history:sales":
+        orders = sorted(list_orders(query.from_user.id), key=lambda item: str(item.get("id", "")), reverse=True)
+        lines = [role_text(query.from_user.id), wallet_text(query.from_user.id)]
+        if orders:
+            lines.extend(
+                [
+                    f"Sale #{item.get('id')} | {item.get('status', '-')} | Rs {int(float(item.get('amount', 0) or 0))}"
+                    for item in orders[:12]
+                ]
+            )
+        else:
+            lines.append("No selling history yet.")
+        await delete_previous(query)
+        await query.message.reply_text(
+            premium_card("SELLING HISTORY", lines),
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Back to History", callback_data="history:menu")], [InlineKeyboardButton("Back to Menu", callback_data="back:menu")]]),
+        )
+        return
+
     if data == "deposit_now":
         await show_deposit_prompt(query, query.from_user.id)
         return
@@ -1545,7 +1650,17 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         plan_id = data.split(":", 1)[1]
         try:
             result = api_send("/orders/purchase-with-wallet", "POST", {"telegram_id": str(query.from_user.id), "plan_id": str(plan_id)})
-            await query.message.reply_text(f"Purchase successful.\nOrder ID: {result.get('order_id')}\n{wallet_text(query.from_user.id)}")
+            await delete_previous(query)
+            await query.message.reply_text(
+                purchase_success_text(result.get("order") or result, query.from_user.id),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("Back to Shop", callback_data="shop_now")],
+                        [InlineKeyboardButton("Back to Menu", callback_data="back:menu")],
+                    ]
+                ),
+            )
         except Exception:
             await query.message.reply_text("Purchase failed. Insufficient balance or out of stock.")
         return
@@ -1708,25 +1823,17 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await show_deposit_prompt(query, query.from_user.id)
                 return
             if action == "all_history":
-                orders = sorted(list_orders(query.from_user.id), key=lambda item: str(item.get("id", "")), reverse=True)
-                payments = sorted(
-                    api_get(f"/payment-requests?telegram_id={urllib.parse.quote(str(query.from_user.id))}"),
-                    key=lambda item: str(item.get("id", "")),
-                    reverse=True,
-                )
-                lines = [wallet_text(query.from_user.id)]
-                if orders:
-                    lines.append("Orders:")
-                    lines.extend([f"#{item.get('id')} | {item.get('status', '-')} | Rs {int(float(item.get('amount', 0) or 0))}" for item in orders[:8]])
-                if payments:
-                    lines.append("Deposits:")
-                    lines.extend([f"#{item.get('id')} | {item.get('status', '-')} | Rs {int(float(item.get('amount', 0) or 0))}" for item in payments[:8]])
-                if len(lines) == 1:
-                    lines.append("No history yet.")
+                lines = [role_text(query.from_user.id), wallet_text(query.from_user.id), "Choose the history you want to view."]
                 await query.message.reply_text(
                     premium_card("ALL HISTORY", lines),
                     parse_mode="HTML",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀ Back to Menu", callback_data="back:menu")]]),
+                    reply_markup=InlineKeyboardMarkup(
+                        [
+                            [InlineKeyboardButton("Deposit History", callback_data="history:deposits")],
+                            [InlineKeyboardButton("Selling History", callback_data="history:sales")],
+                            [InlineKeyboardButton("Back to Menu", callback_data="back:menu")],
+                        ]
+                    ),
                 )
                 return
             if action == "profile":
