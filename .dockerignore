@@ -1,0 +1,10 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.log
+logs/
+data/
+website/node_modules/
+website/dist/
+website/.vercel/
