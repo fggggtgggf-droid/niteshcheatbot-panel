@@ -291,7 +291,29 @@ def wallet_text(telegram_id: int) -> str:
 def highlighted_label(label: str) -> str:
     clean = EMOJI_RE.sub("", str(label or "")).replace("•", " ").strip()
     clean = re.sub(r"\s+", " ", clean)
-    return clean
+    clean = re.sub(r"^[^\w]+", "", clean, flags=re.UNICODE)
+    clean = re.sub(r"[^\w]+$", "", clean, flags=re.UNICODE)
+    return clean.strip()
+
+
+def button_label(button: dict) -> str:
+    builtin_map = {
+        "shop_now": "Shop Now",
+        "my_orders": "My Orders",
+        "profile": "Profile",
+        "pay_proof": "Pay Proof",
+        "feedback": "Feedback",
+        "how_to_use": "How to Use",
+        "support": "Support",
+        "id_help": "ID & LVL ID",
+        "refer_earn": "Refer & Earn",
+        "deposit_now": "Deposit Now",
+        "all_history": "All History",
+    }
+    builtin_action = str(button.get("builtin_action", "") or "").strip()
+    if builtin_action in builtin_map:
+        return builtin_map[builtin_action]
+    return highlighted_label(str(button.get("label", "") or ""))
 
 
 def current_user_role(telegram_id: int) -> str:
@@ -403,7 +425,7 @@ def build_main_menu() -> InlineKeyboardMarkup:
     rows = []
     pair = []
     for button in filter_buttons("main"):
-        pair.append(InlineKeyboardButton(highlighted_label(button["label"]), callback_data=f"btn:{button['id']}"))
+        pair.append(InlineKeyboardButton(button_label(button), callback_data=f"btn:{button['id']}"))
         if len(pair) == 2:
             rows.append(pair)
             pair = []
@@ -423,7 +445,7 @@ def build_products_menu() -> InlineKeyboardMarkup:
     if current:
         rows.append(current)
     for button in filter_buttons("shop"):
-        rows.append([InlineKeyboardButton(highlighted_label(button["label"]), callback_data=f"btn:{button['id']}")])
+        rows.append([InlineKeyboardButton(button_label(button), callback_data=f"btn:{button['id']}")])
     rows.append([InlineKeyboardButton("Back to Menu", callback_data="back:menu")])
     return InlineKeyboardMarkup(rows)
 
@@ -433,7 +455,7 @@ def build_product_menu(product_id: str) -> InlineKeyboardMarkup:
     for action in list_product_actions(product_id):
         rows.append([InlineKeyboardButton(highlighted_label(action["label"]), url=action["url"])])
     for button in filter_buttons("product", product_id=product_id):
-        rows.append([InlineKeyboardButton(highlighted_label(button["label"]), callback_data=f"btn:{button['id']}")])
+        rows.append([InlineKeyboardButton(button_label(button), callback_data=f"btn:{button['id']}")])
     rows.append([InlineKeyboardButton("Buy This Now", callback_data=f"plans:{product_id}")])
     rows.append([InlineKeyboardButton("Back to Shop", callback_data="shop_now")])
     return InlineKeyboardMarkup(rows)
