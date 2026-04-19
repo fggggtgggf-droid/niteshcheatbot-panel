@@ -17,8 +17,8 @@ export default function DashboardTab({ role }) {
     return { total, banned, active: total - banned }
   }, [users])
 
-  const expiringAdmins = useMemo(
-    () => admins.filter((item) => item.status === 'expired' || Number(item.days_left || 0) <= 2),
+  const linkedAdmins = useMemo(
+    () => admins.filter((item) => String(item.telegram_id || '').trim()).length,
     [admins],
   )
 
@@ -32,9 +32,9 @@ export default function DashboardTab({ role }) {
           Overview of your key management system
         </Typography>
       </Stack>
-      {role === 'owner' && expiringAdmins.length > 0 ? (
-        <Alert severity="warning">
-          {expiringAdmins.length} admin panel(s) are expiring soon or already expired. Open Owner Control to renew them.
+      {role === 'owner' ? (
+        <Alert severity="info">
+          Owner se panel branding, admins, deposit settings, aur announcements sab control hoga. Membership expiry disabled hai.
         </Alert>
       ) : null}
       <Stack direction="row" spacing={1}>
@@ -59,8 +59,8 @@ export default function DashboardTab({ role }) {
         </Card>
         <Card sx={{ flex: 1 }}>
           <CardContent>
-            <Typography variant="overline">Banned Users</Typography>
-            <Typography variant="h3">{stats.banned}</Typography>
+            <Typography variant="overline">Linked Admins</Typography>
+            <Typography variant="h3">{linkedAdmins}</Typography>
           </CardContent>
         </Card>
       </Stack>
