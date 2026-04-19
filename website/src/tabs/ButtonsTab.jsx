@@ -13,7 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { apiGet, apiSend, notifySettingsUpdated } from '../api.js'
+import { apiGet, apiSend } from '../api.js'
 
 const builtinOptions = [
   { value: 'shop_now', label: 'Shop Now' },
@@ -51,18 +51,11 @@ export default function ButtonsTab() {
   const [buttons, setButtons] = useState([])
   const [products, setProducts] = useState([])
   const [newButton, setNewButton] = useState(emptyButton)
-  const [themeSettings, setThemeSettings] = useState({
-    button_bg_color: '#ff315f',
-    button_text_color: '#fff5f7',
-    button_hover_color: '#ff5d86',
-    button_disabled_color: '#534049',
-  })
 
   const refresh = async () => {
-    const [btn, prod, settings] = await Promise.all([apiGet('/buttons'), apiGet('/products'), apiGet('/settings')])
+    const [btn, prod] = await Promise.all([apiGet('/buttons'), apiGet('/products')])
     setButtons(btn)
     setProducts(prod)
-    setThemeSettings((current) => ({ ...current, ...settings }))
   }
 
   useEffect(() => {
@@ -93,12 +86,6 @@ export default function ButtonsTab() {
 
   const deleteButton = async (buttonId) => {
     await apiSend(`/buttons/${buttonId}`, 'DELETE')
-    refresh()
-  }
-
-  const saveThemeSettings = async () => {
-    await apiSend('/settings', 'PUT', themeSettings)
-    notifySettingsUpdated(themeSettings)
     refresh()
   }
 
@@ -234,45 +221,6 @@ export default function ButtonsTab() {
           Add button and choose exact placement: Start / Shop / Product.
         </Typography>
       </Stack>
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Button Theme</Typography>
-          <Stack spacing={2} mt={2}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <TextField
-                label="Button Background"
-                value={themeSettings.button_bg_color || ''}
-                onChange={(event) => setThemeSettings((prev) => ({ ...prev, button_bg_color: event.target.value }))}
-                fullWidth
-              />
-              <TextField
-                label="Button Text Color"
-                value={themeSettings.button_text_color || ''}
-                onChange={(event) => setThemeSettings((prev) => ({ ...prev, button_text_color: event.target.value }))}
-                fullWidth
-              />
-            </Stack>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <TextField
-                label="Button Hover Color"
-                value={themeSettings.button_hover_color || ''}
-                onChange={(event) => setThemeSettings((prev) => ({ ...prev, button_hover_color: event.target.value }))}
-                fullWidth
-              />
-              <TextField
-                label="Button Disabled Color"
-                value={themeSettings.button_disabled_color || ''}
-                onChange={(event) => setThemeSettings((prev) => ({ ...prev, button_disabled_color: event.target.value }))}
-                fullWidth
-              />
-            </Stack>
-            <Button variant="contained" onClick={saveThemeSettings}>
-              Save Button Theme
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
 
       <Card>
         <CardContent>
