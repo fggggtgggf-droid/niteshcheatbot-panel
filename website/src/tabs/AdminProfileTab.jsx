@@ -26,7 +26,7 @@ const durationOptions = [
   { value: 'custom', label: 'Custom Days' },
 ]
 
-const emptyChild = { telegram_id: '', name: '', username: '', login_email: '', login_password: '', duration_mode: '30', custom_days: 30, notes: '' }
+const emptyChild = { telegram_id: '', name: '', username: '', duration_mode: '30', custom_days: 30, notes: '' }
 
 export default function AdminProfileTab({
   sessionAdminId,
@@ -42,7 +42,6 @@ export default function AdminProfileTab({
   const [allAdmins, setAllAdmins] = useState([])
   const [activityLogs, setActivityLogs] = useState([])
   const [childForm, setChildForm] = useState(emptyChild)
-  const [credentialForm, setCredentialForm] = useState({ login_email: '', login_password: '' })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -51,10 +50,6 @@ export default function AdminProfileTab({
   }, [sessionTelegramId])
 
   const record = adminAccess?.record || {}
-
-  useEffect(() => {
-    setCredentialForm({ login_email: record.login_email || sessionLoginEmail || '', login_password: '' })
-  }, [record.login_email, sessionLoginEmail])
 
   const refresh = async (targetId = sessionTelegramId, targetAdminId = sessionAdminId) => {
     const cleanId = String(targetId || '').trim()
@@ -159,8 +154,6 @@ export default function AdminProfileTab({
       plan_name: childForm.duration_mode === 'lifetime' ? 'Lifetime Access' : record.plan_name || 'Custom Plan',
       subscription_price: Number(record.subscription_price || 0),
       custom_days: effectiveChildDays,
-      login_email: childForm.login_email.trim(),
-      login_password: childForm.login_password.trim(),
       notes: childForm.notes,
     })
     setChildForm(emptyChild)
@@ -169,23 +162,6 @@ export default function AdminProfileTab({
     await refresh(record.telegram_id || sessionTelegramId, record.id || sessionAdminId)
   }
 
-  const saveLoginCredentials = async () => {
-    if (!record.id) return
-    if (!credentialForm.login_email.trim()) {
-      setError('Login email required')
-      setMessage('')
-      return
-    }
-    await apiSend(`/admins/${record.id}`, 'PATCH', {
-      login_email: credentialForm.login_email.trim(),
-      ...(credentialForm.login_password.trim() ? { login_password: credentialForm.login_password.trim() } : {}),
-    })
-    onSessionLoginEmailChange?.(credentialForm.login_email.trim())
-    await refresh(record.telegram_id || sessionTelegramId, record.id || sessionAdminId)
-    setMessage('Login credentials updated for this admin account.')
-    setError('')
-    setCredentialForm((current) => ({ ...current, login_password: '' }))
-  }
 
   return (
     <Stack spacing={3}>
@@ -194,7 +170,7 @@ export default function AdminProfileTab({
           &gt;&gt; Profile
         </Typography>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Website account runs from the current panel session. Telegram Chat ID is optional and only used to control the same account from the bot.
+          Telegram Chat ID optional hai. Ek baar link kar doge to isi admin account ko bot se bhi manage kar paoge.
         </Typography>
       </Stack>
 
@@ -208,7 +184,7 @@ export default function AdminProfileTab({
               fullWidth
             />
             <Button variant="contained" onClick={loadProfile}>
-              Link Telegram
+              Link Telegram Chat ID
             </Button>
             <Button variant="outlined" color="secondary" onClick={unlinkProfile} disabled={!sessionTelegramId}>
               Unlink
@@ -216,7 +192,7 @@ export default function AdminProfileTab({
           </Stack>
           {sessionAdminId ? (
             <Typography variant="caption" sx={{ color: 'text.secondary', mt: 1 }}>
-              Current website account ID: {sessionAdminId}
+              Current admin account ID: {sessionAdminId}
             </Typography>
           ) : null}
         </CardContent>
@@ -228,9 +204,9 @@ export default function AdminProfileTab({
       {record.id ? (
         <>
           <Grid container spacing={2}>
-            <Grid item xs={12} md={3}><Card><CardContent><Typography variant="caption">ACTIVE PLAN</Typography><Typography variant="h6">{record.plan_name || 'Custom'}</Typography></CardContent></Card></Grid>
+            <Grid item xs={12} md={3}><Card><CardContent><Typography variant="caption">ACCESS MODE</Typography><Typography variant="h6">{record.plan_name || 'Lifetime Access'}</Typography></CardContent></Card></Grid>
             <Grid item xs={12} md={3}><Card><CardContent><Typography variant="caption">STATUS</Typography><Typography variant="h6">{record.status || '-'}</Typography></CardContent></Card></Grid>
-            <Grid item xs={12} md={3}><Card><CardContent><Typography variant="caption">DAYS LEFT</Typography><Typography variant="h6">{record.days_left || 0}</Typography></CardContent></Card></Grid>
+            <Grid item xs={12} md={3}><Card><CardContent><Typography variant="caption">BOT LINK</Typography><Typography variant="h6">{record.telegram_id ? 'Linked' : 'Not Linked'}</Typography></CardContent></Card></Grid>
             <Grid item xs={12} md={3}><Card><CardContent><Typography variant="caption">CHILD ADMINS</Typography><Typography variant="h6">{childAdmins.length}</Typography></CardContent></Card></Grid>
           </Grid>
 
@@ -239,44 +215,10 @@ export default function AdminProfileTab({
               <Stack spacing={1}>
                 <Typography variant="h6">Membership Snapshot</Typography>
                 <Typography variant="body2">Telegram Chat ID: {record.telegram_id || '-'}</Typography>
-                <Typography variant="body2">Login Email: {record.login_email || sessionLoginEmail || '-'}</Typography>
-                <Typography variant="body2">Plan ID: {record.plan_id || '-'}</Typography>
-                <Typography variant="body2">Expiry Date: {record.expires_at || '-'}</Typography>
-                <Typography variant="body2">Price: Rs {record.subscription_price || 0}</Typography>
+                <Typography variant="body2">Access Type: {record.plan_name || 'Lifetime Access'}</Typography>
+                <Typography variant="body2">Expiry: Not enforced</Typography>
+                <Typography variant="body2">Panel Price: Rs {record.subscription_price || 0}</Typography>
                 <Typography variant="body2">Parent Admin: {record.parent_admin_id || 'Main / Super Admin'}</Typography>
-              </Stack>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent>
-              <Stack spacing={2}>
-                <Typography variant="h6">Panel Login Credentials</Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  Use these credentials for repeat website login. Telegram Chat ID is separate and optional.
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      label="Login Email"
-                      value={credentialForm.login_email}
-                      onChange={(event) => setCredentialForm((current) => ({ ...current, login_email: event.target.value }))}
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      label="New Password (leave blank to keep current)"
-                      type="password"
-                      value={credentialForm.login_password}
-                      onChange={(event) => setCredentialForm((current) => ({ ...current, login_password: event.target.value }))}
-                      fullWidth
-                    />
-                  </Grid>
-                </Grid>
-                <Button variant="contained" onClick={saveLoginCredentials}>
-                  Save Login Credentials
-                </Button>
               </Stack>
             </CardContent>
           </Card>
@@ -307,23 +249,6 @@ export default function AdminProfileTab({
                       label="Username"
                       value={childForm.username}
                       onChange={(event) => setChildForm((current) => ({ ...current, username: event.target.value }))}
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      label="Login Email"
-                      value={childForm.login_email}
-                      onChange={(event) => setChildForm((current) => ({ ...current, login_email: event.target.value }))}
-                      fullWidth
-                    />
-                  </Grid>
-                  <Grid item xs={12} md={6}>
-                    <TextField
-                      label="Login Password"
-                      type="password"
-                      value={childForm.login_password}
-                      onChange={(event) => setChildForm((current) => ({ ...current, login_password: event.target.value }))}
                       fullWidth
                     />
                   </Grid>
@@ -409,7 +334,7 @@ export default function AdminProfileTab({
           </Card>
         </>
       ) : (
-        <Alert severity="warning">Load a valid Telegram Chat ID to unlock your admin membership profile.</Alert>
+        <Alert severity="info">Telegram Chat ID abhi link nahi hai. Agar bot se panel manage karna hai to apni chat ID yahan link kar do.</Alert>
       )}
     </Stack>
   )
