@@ -13,7 +13,15 @@ import urllib.request
 from io import BytesIO
 
 import qrcode
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import (
+    BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    MenuButtonCommands,
+    ReplyKeyboardMarkup,
+    Update,
+)
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -535,8 +543,8 @@ def deposit_amount_prompt_text(user_id: int, needed: int = 0) -> str:
         lines.append(f"Required to continue: Rs {needed}")
     lines.append("Enter the amount you want to deposit")
     lines.append("in INR.")
-    lines.append(f"⚠ Minimum: Rs {minimum}")
-    lines.append(f"⚠ Maximum: Rs {maximum}")
+    lines.append(f"Warning: Minimum Rs {minimum}")
+    lines.append(f"Warning: Maximum Rs {maximum}")
     lines.append("Type the amount and send.")
     return premium_card("Deposit via UPI", lines)
 
@@ -662,13 +670,18 @@ async def orders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(
             premium_card("MY ORDERS", [wallet_text(user_id), "No orders yet."]),
             parse_mode="HTML",
+            reply_markup=build_reply_keyboard(user_id),
         )
         return
     lines = [wallet_text(user_id)]
     for item in orders[:10]:
         lines.append(f"📦 #{item.get('id')} • {item.get('status', '-')}")
         lines.append(f"💸 Rs {int(float(item.get('amount', 0) or 0))}")
-    await update.message.reply_text(premium_card("MY ORDERS", lines), parse_mode="HTML")
+    await update.message.reply_text(
+        premium_card("MY ORDERS", lines),
+        parse_mode="HTML",
+        reply_markup=build_reply_keyboard(user_id),
+    )
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -687,6 +700,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ],
         ),
         parse_mode="HTML",
+        reply_markup=build_reply_keyboard(update.effective_user.id),
     )
 
 
@@ -726,8 +740,23 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"WhatsApp: {app_settings.get('whatsapp_support_link', '')}",
             ]
             if item
-        )
+        ),
+        reply_markup=build_reply_keyboard(update.effective_user.id),
     )
+
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.effective_user or not update.message:
+        return
+    await update.message.reply_text(
+        premium_card("MAIN MENU", [wallet_text(update.effective_user.id), "Tap any button below to continue."]),
+        parse_mode="HTML",
+        reply_markup=build_main_menu(),
+    )
+
+
+async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await shop_command(update, context)
 
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1729,7 +1758,9 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 def build_application() -> Application:
     app = Application.builder().token(bot_token()).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", menu_command))
     app.add_handler(CommandHandler("shop", shop_command))
+    app.add_handler(CommandHandler("purchase", purchase_command))
     app.add_handler(CommandHandler("orders", orders_command))
     app.add_handler(CommandHandler("profile", profile_command))
     app.add_handler(CommandHandler("deposit", deposit_command))
@@ -1798,10 +1829,13 @@ async def run_bot() -> None:
     app = build_application()
     await app.initialize()
     await app.start()
+    await app.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     await app.bot.set_my_commands(
         [
             BotCommand("start", "Open bot menu"),
+            BotCommand("menu", "Open main menu"),
             BotCommand("shop", "Open premium shop"),
+            BotCommand("purchase", "Start purchase flow"),
             BotCommand("orders", "View my orders"),
             BotCommand("profile", "View my profile"),
             BotCommand("deposit", "Add wallet balance"),

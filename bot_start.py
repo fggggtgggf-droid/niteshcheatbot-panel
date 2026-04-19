@@ -8,7 +8,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from telegram import BotCommand
+from telegram import BotCommand, MenuButtonCommands
 from telegram import Update as TelegramUpdate
 
 
@@ -103,10 +103,13 @@ async def run_webhook_bot() -> None:
     print(f"Configuring Telegram webhook: {webhook_url}", flush=True)
     await BOT_APP.bot.delete_webhook(drop_pending_updates=True)
     await BOT_APP.bot.set_webhook(url=webhook_url, drop_pending_updates=True)
+    await BOT_APP.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
     await BOT_APP.bot.set_my_commands(
         [
             BotCommand("start", "Open bot menu"),
+            BotCommand("menu", "Open main menu"),
             BotCommand("shop", "Open premium shop"),
+            BotCommand("purchase", "Start purchase flow"),
             BotCommand("orders", "View my orders"),
             BotCommand("profile", "View my profile"),
             BotCommand("deposit", "Add wallet balance"),

@@ -738,14 +738,19 @@ def payment_settings_get():
 @app.put("/api/payment-settings")
 def payment_settings_update():
     payload = json_body()
+    current = get_settings()
     set_settings(
         {
-            "payment_qr": str(payload.get("qr", "")).strip(),
-            "payment_upi_id": str(payload.get("upi_id", "")).strip(),
-            "payment_min_deposit": str(int(payload.get("min_deposit", 100) or 100)),
-            "payment_max_deposit": str(int(payload.get("max_deposit", 5000) or 5000)),
-            "payment_mode_upi": "1" if int(payload.get("use_upi", 1) or 1) else "0",
-            "payment_mode_gateway": "1" if int(payload.get("use_gateway", 0) or 0) else "0",
+            "payment_qr": str(payload.get("qr", current.get("payment_qr", ""))).strip(),
+            "payment_upi_id": str(payload.get("upi_id", current.get("payment_upi_id", ""))).strip(),
+            "payment_min_deposit": str(int(payload.get("min_deposit", current.get("payment_min_deposit", 100)) or 100)),
+            "payment_max_deposit": str(int(payload.get("max_deposit", current.get("payment_max_deposit", 5000)) or 5000)),
+            "payment_mode_upi": "1"
+            if int(payload.get("use_upi", current.get("payment_mode_upi", 1)) or 1)
+            else "0",
+            "payment_mode_gateway": "1"
+            if int(payload.get("use_gateway", current.get("payment_mode_gateway", 0)) or 0)
+            else "0",
         }
     )
     return jsonify({"status": "ok"})
