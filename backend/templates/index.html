@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <div class="shell">
+        <aside class="sidebar">
+            <div>
+                <p class="eyebrow">Control Center</p>
+                <h1>Golden Seller Admin</h1>
+                <p class="muted">Users ko track, edit aur ban/unban yahin se manage karo.</p>
+            </div>
+
+            <nav class="tabs">
+                <a class="tab {{ 'active' if active_tab == 'dashboard' else '' }}" href="{{ url_for('index', tab='dashboard') }}">Dashboard</a>
+                <a class="tab {{ 'active' if active_tab == 'users' else '' }}" href="{{ url_for('index', tab='users') }}">Users</a>
+            </nav>
+        </aside>
+
+        <main class="content">
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    <div class="flash">{{ messages[0] }}</div>
+                {% endif %}
+            {% endwith %}
+
+            {% if active_tab == 'dashboard' %}
+                <section class="hero">
+                    <div class="card">
+                        <p>Total Users</p>
+                        <strong>{{ stats.total_users or 0 }}</strong>
+                    </div>
+                    <div class="card">
+                        <p>Active Users</p>
+                        <strong>{{ stats.active_users or 0 }}</strong>
+                    </div>
+                    <div class="card">
+                        <p>Banned Users</p>
+                        <strong>{{ stats.banned_users or 0 }}</strong>
+                    </div>
+                </section>
+            {% endif %}
+
+            {% if active_tab == 'users' %}
+                <section class="table-wrap">
+                    <div class="table-head">
+                        <div>
+                            <p class="eyebrow">Users</p>
+                            <h2>Registered Telegram Users</h2>
+                        </div>
+                    </div>
+
+                    {% if users %}
+                        <div class="users-grid">
+                            {% for user in users %}
+                                <article class="user-card">
+                                    <div class="user-top">
+                                        <div>
+                                            <h3>{{ user.first_name }}</h3>
+                                            <p>ID: {{ user.telegram_id }}</p>
+                                        </div>
+                                        <span class="badge {{ 'danger' if user.is_banned else 'success' }}">
+                                            {{ 'Banned' if user.is_banned else 'Active' }}
+                                        </span>
+                                    </div>
+
+                                    <form method="post" action="{{ url_for('update_user', user_id=user.id) }}" class="user-form">
+                                        <label>Name
+                                            <input type="text" name="first_name" value="{{ user.first_name }}">
+                                        </label>
+                                        <label>Username
+                                            <input type="text" name="username" value="{{ user.username or '' }}">
+                                        </label>
+                                        <label>Notes
+                                            <textarea name="notes" rows="3">{{ user.notes or '' }}</textarea>
+                                        </label>
+                                        <button type="submit" class="primary">Save Changes</button>
+                                    </form>
+
+                                    <form method="post" action="{{ url_for('toggle_ban', user_id=user.id) }}">
+                                        <button type="submit" class="secondary">
+                                            {{ 'Unban User' if user.is_banned else 'Ban User' }}
+                                        </button>
+                                    </form>
+                                </article>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="empty">
+                            <p>Abhi tak koi user bot start nahi kiya.</p>
+                        </div>
+                    {% endif %}
+                </section>
+            {% endif %}
+        </main>
+    </div>
+</body>
+</html>
