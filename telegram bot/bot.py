@@ -30,6 +30,7 @@ logging.basicConfig(
     level=logging.INFO,
 )
 LOGGER = logging.getLogger(__name__)
+_CACHE: dict[str, dict] = {}
 
 
 def api_get(path: str):
@@ -46,11 +47,24 @@ def api_send(path: str, method: str, payload: dict | None = None):
         method=method,
     )
     with urllib.request.urlopen(request, timeout=25) as response:
-        return json.loads(response.read().decode("utf-8"))
+        result = json.loads(response.read().decode("utf-8"))
+    _CACHE.clear()
+    return result
+
+
+def cached_api_get(path: str, ttl: float = 2.0):
+    cache_key = f"{path}:{ttl}"
+    current_time = time.time()
+    entry = _CACHE.get(cache_key)
+    if entry and current_time < float(entry.get("expires_at", 0)):
+        return entry.get("value")
+    value = api_get(path)
+    _CACHE[cache_key] = {"value": value, "expires_at": current_time + ttl}
+    return value
 
 
 def settings():
-    return api_get("/runtime-settings")
+    return cached_api_get("/runtime-settings", ttl=4.0)
 
 
 def media_input(media: str, fallback_name: str = "upload.jpg"):
@@ -94,19 +108,20 @@ def get_user_by_telegram_id(telegram_id: int):
 
 
 def list_admin_ids() -> list[str]:
-    return [str(admin.get("telegram_id", "")).strip() for admin in api_get("/admins") if str(admin.get("telegram_id", "")).strip()]
+    admins = cached_api_get("/admins", ttl=3.0)
+    return [str(admin.get("telegram_id", "")).strip() for admin in admins if str(admin.get("telegram_id", "")).strip()]
 
 
 def get_admin_access(telegram_id: int) -> dict:
     try:
-        return api_get(f"/admins/access/{urllib.parse.quote(str(telegram_id))}")
+        return cached_api_get(f"/admins/access/{urllib.parse.quote(str(telegram_id))}", ttl=2.0)
     except Exception:
         return {"active": False, "reason": "lookup_failed", "record": {}}
 
 
 def admin_contact() -> dict:
     try:
-        return api_get("/admin-contact")
+        return cached_api_get("/admin-contact", ttl=5.0)
     except Exception:
         return {"username": "", "telegram_id": "", "name": "Admin"}
 
@@ -123,11 +138,11 @@ def is_admin(telegram_id: int) -> bool:
 
 
 def list_admin_records():
-    return api_get("/admins")
+    return cached_api_get("/admins", ttl=3.0)
 
 
 def list_owner_plans():
-    return api_get("/owner-plans")
+    return cached_api_get("/owner-plans", ttl=6.0)
 
 
 def current_admin_record(telegram_id: int) -> dict:
@@ -155,7 +170,7 @@ def sync_admin_profile(user) -> None:
 
 def system_status() -> dict:
     try:
-        return api_get("/system-status")
+        return cached_api_get("/system-status", ttl=5.0)
     except Exception:
         return {"bot_enabled": True, "active_super_admins": 0, "maintenance_message": "Bot status unavailable."}
 
@@ -167,7 +182,7 @@ def user_bot_available(telegram_id: int) -> bool:
 
 
 def list_buttons():
-    items = [button for button in api_get("/buttons") if int(button.get("is_active", 1)) == 1]
+    items = [button for button in cached_api_get("/buttons", ttl=3.0) if int(button.get("is_active", 1)) == 1]
     items.sort(key=lambda item: int(item.get("sort_order", 0)))
     return items
 
@@ -186,12 +201,12 @@ def filter_buttons(placement: str, product_id: str | None = None):
 
 
 def list_products():
-    return [product for product in api_get("/products") if int(product.get("is_active", 1)) == 1]
+    return [product for product in cached_api_get("/products", ttl=3.0) if int(product.get("is_active", 1)) == 1]
 
 
 def list_plans(product_id: str | None = None):
     query = f"?product_id={urllib.parse.quote(str(product_id))}" if product_id else ""
-    return [plan for plan in api_get(f"/plans{query}") if int(plan.get("is_active", 1)) == 1]
+    return [plan for plan in cached_api_get(f"/plans{query}", ttl=3.0) if int(plan.get("is_active", 1)) == 1]
 
 
 def list_orders(telegram_id: int):
@@ -201,7 +216,7 @@ def list_orders(telegram_id: int):
 def list_product_actions(product_id: str):
     return [
         action
-        for action in api_get(f"/product-actions?product_id={urllib.parse.quote(str(product_id))}")
+        for action in cached_api_get(f"/product-actions?product_id={urllib.parse.quote(str(product_id))}", ttl=3.0)
         if int(action.get("is_active", 1)) == 1
     ]
 
@@ -233,6 +248,30 @@ def admin_contact_line() -> str:
     if telegram_id:
         return f"Contact Admin ID: {telegram_id}"
     return "Contact Admin for assistance."
+
+
+def payment_settings() -> dict:
+    try:
+        return cached_api_get("/payment-settings", ttl=4.0)
+    except Exception:
+        return {"qr": "", "upi_id": ""}
+
+
+def build_upi_uri(upi_id: str, amount: int) -> str:
+    app_settings = settings()
+    params = {
+        "pa": str(upi_id or "").strip(),
+        "pn": app_settings.get("brand_name", "Seller Bot"),
+        "am": f"{float(amount):.2f}",
+        "tn": f"Wallet Deposit Rs {int(amount)}",
+        "cu": "INR",
+    }
+    return f"upi://pay?{urllib.parse.urlencode(params)}"
+
+
+def generated_upi_qr(upi_id: str, amount: int) -> str:
+    upi_uri = build_upi_uri(upi_id, amount)
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=720x720&data={urllib.parse.quote(upi_uri, safe='')}"
 
 
 def build_reply_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
@@ -361,6 +400,65 @@ async def send_admin_alert(context: ContextTypes.DEFAULT_TYPE, text: str) -> Non
             continue
 
 
+def deposit_amount_rows(needed: int = 0) -> list[list[InlineKeyboardButton]]:
+    rows = [
+        [InlineKeyboardButton("Rs 100", callback_data="deposit_amt:100"), InlineKeyboardButton("Rs 200", callback_data="deposit_amt:200")],
+        [InlineKeyboardButton("Rs 300", callback_data="deposit_amt:300"), InlineKeyboardButton("Rs 400", callback_data="deposit_amt:400")],
+        [InlineKeyboardButton("Rs 500", callback_data="deposit_amt:500"), InlineKeyboardButton("Custom Amount", callback_data="deposit_custom")],
+    ]
+    if needed > 0:
+        rows.insert(0, [InlineKeyboardButton(f"Deposit Exact Rs {needed}", callback_data=f"deposit_amt:{needed}")])
+    rows.append([InlineKeyboardButton("Back to Menu", callback_data="back:menu")])
+    return rows
+
+
+def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
+    pay_settings = payment_settings()
+    upi_id = str(pay_settings.get("upi_id", "")).strip()
+    lines = [wallet_text(user_id)]
+    if needed > 0:
+        lines.append(f"Need Rs {needed} more to purchase.")
+    if upi_id:
+        lines.append(f"UPI ID: {upi_id}")
+        lines.append("Choose an amount below, pay that exact amount, then submit the transaction ID.")
+    else:
+        lines.extend(
+            [
+                "Deposit is under maintenance right now.",
+                admin_contact_line(),
+            ]
+        )
+    return premium_card("DEPOSIT NOW", lines)
+
+
+async def send_deposit_checkout_message(message, user_id: int, amount: int, request_id: str) -> None:
+    pay_settings = payment_settings()
+    upi_id = str(pay_settings.get("upi_id", "")).strip()
+    static_qr = str(pay_settings.get("qr", "")).strip()
+    qr_source = generated_upi_qr(upi_id, amount) if upi_id else static_qr
+    lines = [
+        wallet_text(user_id),
+        f"Amount: Rs {int(amount)}",
+    ]
+    if upi_id:
+        lines.append(f"UPI ID: {upi_id}")
+        lines.append("Scan the QR or pay using the UPI ID, then tap I Have Paid.")
+    else:
+        lines.append("Static QR configured by admin.")
+        lines.append("Pay and then tap I Have Paid.")
+    markup = InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("I Have Paid", callback_data=f"deposit_paid:{request_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"deposit_cancel:{request_id}")],
+        ]
+    )
+    caption = premium_card("PAYMENT CHECKOUT", lines)
+    if qr_source:
+        await message.reply_photo(photo=media_input(qr_source, "upi-qr.jpg"), caption=caption, parse_mode="HTML", reply_markup=markup)
+    else:
+        await message.reply_text(caption, parse_mode="HTML", reply_markup=markup)
+
+
 def build_owner_panel_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -410,25 +508,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if admin_access.get("record") and not admin_access.get("active"):
         await send_inactive_admin_notice(update.message, user.id)
         return
-    reply_keyboard = build_reply_keyboard(user.id)
+    last_start_message_id = context.user_data.get("last_start_message_id")
+    if last_start_message_id:
+        try:
+            await context.bot.delete_message(chat_id=user.id, message_id=last_start_message_id)
+        except Exception:
+            pass
     try:
         photos = await context.bot.get_user_profile_photos(user.id, limit=1)
         if photos.photos:
-            await update.message.reply_photo(
+            sent = await update.message.reply_photo(
                 photo=photos.photos[0][-1].file_id,
                 caption=text,
                 parse_mode="HTML",
-                reply_markup=reply_keyboard,
+                reply_markup=build_main_menu(),
             )
         else:
-            await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_keyboard)
+            sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
     except Exception:
-        await update.message.reply_text(text, parse_mode="HTML", reply_markup=reply_keyboard)
-    await update.message.reply_text(
-        premium_card("QUICK MENU", ["Tap any button below to continue.", wallet_text(user.id)]),
-        parse_mode="HTML",
-        reply_markup=build_main_menu(),
-    )
+        sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
+    context.user_data["last_start_message_id"] = sent.message_id
 
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -541,7 +640,8 @@ async def setqr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Usage: /setqr (reply to QR image)")
         return
     file_id = update.message.reply_to_message.photo[-1].file_id
-    api_send("/payment-settings", "PUT", {"qr": file_id, "use_upi": 1, "use_gateway": 0})
+    current_settings = payment_settings()
+    api_send("/payment-settings", "PUT", {"qr": file_id, "upi_id": str(current_settings.get("upi_id", "")).strip()})
     await update.message.reply_text("Payment QR updated.")
 
 
@@ -569,6 +669,20 @@ async def on_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         media_type = "sticker"
         file_id = message.sticker.file_id
     if not file_id:
+        return
+    awaiting_media = str(context.user_data.get("awaiting_setting_media", "") or "").strip()
+    if awaiting_media == "payment_qr":
+        current_settings = payment_settings()
+        api_send(
+            "/payment-settings",
+            "PUT",
+            {
+                "qr": file_id,
+                "upi_id": str(current_settings.get("upi_id", "")).strip(),
+            },
+        )
+        context.user_data["awaiting_setting_media"] = ""
+        await message.reply_text("Payment QR updated from Telegram bot.")
         return
     await message.reply_text(
         f"Media helper ready\nType: {media_type}\nFile ID:\n{file_id}\n\nUse this file_id in Announcement / Product Media / Custom Buttons."
@@ -602,12 +716,54 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
 
+    if context.user_data.get("awaiting_custom_deposit_amount") == "1":
+        raw_amount = (update.message.text or "").strip()
+        if not raw_amount.isdigit():
+            await update.message.reply_text("Valid amount bhejo. Example: 250")
+            return
+        amount = int(raw_amount)
+        if amount < 10 or amount > 50000:
+            await update.message.reply_text("Amount 10 se 50000 ke beech bhejo.")
+            return
+        req = api_send(
+            "/payment-requests",
+            "POST",
+            {"type": "wallet_topup", "telegram_id": str(update.effective_user.id), "amount": amount, "product_id": "", "plan_id": ""},
+        )
+        context.user_data["awaiting_custom_deposit_amount"] = ""
+        await send_deposit_checkout_message(update.message, update.effective_user.id, amount, str(req.get("id", "")))
+        await send_admin_alert(context, f"New deposit request\nID: {req.get('id')}\nUser: {update.effective_user.id}\nAmount: Rs {amount}")
+        return
+
     if context.user_data.get("awaiting_admin_announcement") == "1" and is_admin(update.effective_user.id):
         announce_text = (update.message.text or "").strip()
         if announce_text:
             response = api_send("/announcements/broadcast", "POST", {"message": announce_text, "media_type": "text", "media": ""})
             await update.message.reply_text(f"Broadcast sent: {response.get('sent_count')}/{response.get('total')}")
         context.user_data["awaiting_admin_announcement"] = ""
+        return
+
+    awaiting_setting = str(context.user_data.get("awaiting_admin_setting", "") or "").strip()
+    if awaiting_setting and is_admin(update.effective_user.id):
+        value = (update.message.text or "").strip()
+        if not value:
+            await update.message.reply_text("Empty value save nahi ho sakta.")
+            return
+        if awaiting_setting == "payment_upi_id":
+            current_settings = payment_settings()
+            api_send(
+                "/payment-settings",
+                "PUT",
+                {
+                    "qr": str(current_settings.get("qr", "")).strip(),
+                    "upi_id": value,
+                },
+            )
+            await update.message.reply_text("UPI ID updated from bot.")
+        else:
+            api_send("/settings", "PUT", {awaiting_setting: value})
+            await update.message.reply_text("Customization updated from bot.")
+        context.user_data["awaiting_admin_setting"] = ""
         return
 
     text = (update.message.text or "").strip().lower()
@@ -646,18 +802,13 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"{rendered}\n\n{wallet_text(update.effective_user.id)}")
         return
     if text == "deposit now":
-        pay_settings = api_get("/payment-settings")
-        qr = str(pay_settings.get("qr", "")).strip()
-        upi_id = str(pay_settings.get("upi_id", "")).strip()
-        if int(pay_settings.get("use_gateway", 0) or 0) == 1:
-            await update.message.reply_text("Gateway mode enabled. Deposit amount choose karke payment request submit karo.")
-        elif qr:
-            caption = "Deposit and send payment reference number."
-            if upi_id:
-                caption = f"Pay using UPI ID: {upi_id}\n\nDeposit and send payment reference number."
-            await update.message.reply_photo(photo=media_input(qr, "payment-qr.jpg"), caption=caption)
-        elif upi_id:
-            await update.message.reply_text(f"Deposit Now\nUPI ID: {upi_id}\n\nPayment karke transaction reference bhejo.")
+        pay_settings = payment_settings()
+        if str(pay_settings.get("upi_id", "")).strip() or str(pay_settings.get("qr", "")).strip():
+            await update.message.reply_text(
+                deposit_prompt_text(update.effective_user.id),
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(deposit_amount_rows()),
+            )
         else:
             await update.message.reply_text(
                 premium_card(
@@ -685,7 +836,11 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         return
     if text == "menu":
-        await update.message.reply_text(wallet_text(update.effective_user.id), reply_markup=build_main_menu())
+        await update.message.reply_text(
+            premium_card("MAIN MENU", [wallet_text(update.effective_user.id), "Tap any button below to continue."]),
+            parse_mode="HTML",
+            reply_markup=build_main_menu(),
+        )
         return
     if text == "admin panel" and is_admin(update.effective_user.id):
         await update.message.reply_text(
@@ -695,6 +850,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     [InlineKeyboardButton("Users", callback_data="adm:users"), InlineKeyboardButton("Products", callback_data="adm:products")],
                     [InlineKeyboardButton("Licenses", callback_data="adm:licenses"), InlineKeyboardButton("Payments", callback_data="adm:payments")],
                     [InlineKeyboardButton("Resets", callback_data="adm:resets"), InlineKeyboardButton("Broadcast", callback_data="adm:broadcast")],
+                    [InlineKeyboardButton("Customization", callback_data="adm:customization")],
                 ]
             ),
         )
@@ -716,31 +872,13 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def show_deposit_prompt(query, user_id: int, needed: int = 0):
-    pay_settings = api_get("/payment-settings")
+    pay_settings = payment_settings()
     qr = str(pay_settings.get("qr", "")).strip()
     upi_id = str(pay_settings.get("upi_id", "")).strip()
-    gateway_enabled = int(pay_settings.get("use_gateway", 0) or 0) == 1
-    lines = [wallet_text(user_id)]
-    if needed > 0:
-        lines.append(f"Need Rs {needed} more to purchase.")
-    if gateway_enabled:
-        lines.append("Gateway mode enabled. Choose amount and submit your payment reference after payment.")
-    else:
-        if upi_id:
-            lines.append(f"UPI ID: {upi_id}")
-        lines.append("Choose deposit amount and submit payment ref.")
-    markup = InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Deposit Rs 100", callback_data="deposit_amt:100"), InlineKeyboardButton("Deposit Rs 500", callback_data="deposit_amt:500")],
-            [InlineKeyboardButton("Deposit Rs 1000", callback_data="deposit_amt:1000")],
-            [InlineKeyboardButton("Back to Menu", callback_data="back:menu")],
-        ]
-    )
+    markup = InlineKeyboardMarkup(deposit_amount_rows(needed))
     await delete_previous(query)
-    if qr and not gateway_enabled:
-        await query.message.reply_photo(photo=media_input(qr, "payment-qr.jpg"), caption=premium_card("DEPOSIT NOW", lines), parse_mode="HTML", reply_markup=markup)
-    elif upi_id and not gateway_enabled:
-        await query.message.reply_text(premium_card("DEPOSIT NOW", lines), parse_mode="HTML", reply_markup=markup)
+    if qr or upi_id:
+        await query.message.reply_text(deposit_prompt_text(user_id, needed), parse_mode="HTML", reply_markup=markup)
     else:
         await query.message.reply_text(
             premium_card(
@@ -772,7 +910,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "BOT IN MAINTENANCE",
                 [
                     system_status().get("maintenance_message", "Bot is temporarily unavailable."),
-                    "Please renew admin subscription to continue.",
+                    admin_contact_line(),
                 ],
             ),
             parse_mode="HTML",
@@ -835,6 +973,31 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             context.user_data["awaiting_admin_announcement"] = "1"
             await query.message.reply_text("Send announcement text now.")
             return
+        if data == "adm:customization":
+            await query.message.reply_text(
+                "Bot Customization",
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [InlineKeyboardButton("Set Welcome Text", callback_data="cfg:welcome_text"), InlineKeyboardButton("Set Shop Header", callback_data="cfg:shop_header_text")],
+                        [InlineKeyboardButton("Set Support Text", callback_data="cfg:support_text"), InlineKeyboardButton("Set UPI ID", callback_data="cfg:payment_upi_id")],
+                        [InlineKeyboardButton("Set QR From Next Image", callback_data="cfg:payment_qr")],
+                    ]
+                ),
+            )
+            return
+
+    if data.startswith("cfg:"):
+        if not is_admin(query.from_user.id):
+            await query.message.reply_text("Admin only.")
+            return
+        setting_key = data.split(":", 1)[1]
+        if setting_key == "payment_qr":
+            context.user_data["awaiting_setting_media"] = "payment_qr"
+            await query.message.reply_text("Now send the QR image to this bot.")
+            return
+        context.user_data["awaiting_admin_setting"] = setting_key
+        await query.message.reply_text("Now send the new value.")
+        return
 
     if data.startswith("owner:"):
         if not is_owner(query.from_user.id):
@@ -955,11 +1118,20 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data == "back:menu":
         await delete_previous(query)
-        await query.message.reply_text(wallet_text(query.from_user.id), reply_markup=build_main_menu())
+        await query.message.reply_text(
+            premium_card("MAIN MENU", [wallet_text(query.from_user.id), "Tap any button below to continue."]),
+            parse_mode="HTML",
+            reply_markup=build_main_menu(),
+        )
         return
 
     if data == "deposit_now":
         await show_deposit_prompt(query, query.from_user.id)
+        return
+
+    if data == "deposit_custom":
+        context.user_data["awaiting_custom_deposit_amount"] = "1"
+        await query.message.reply_text("Send the custom deposit amount now. Example: 250")
         return
 
     if data.startswith("deposit_amt:"):
@@ -969,11 +1141,25 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             "POST",
             {"type": "wallet_topup", "telegram_id": str(query.from_user.id), "amount": amount, "product_id": "", "plan_id": ""},
         )
-        context.user_data["awaiting_upi_ref_for"] = str(req.get("id", ""))
-        await query.message.reply_text(
-            f"Deposit request #{req.get('id')} created for Rs {amount}.\nNow send UPI payment reference number.",
-        )
+        await delete_previous(query)
+        await send_deposit_checkout_message(query.message, query.from_user.id, amount, str(req.get("id", "")))
         await send_admin_alert(context, f"New deposit request\nID: {req.get('id')}\nUser: {query.from_user.id}\nAmount: Rs {amount}")
+        return
+
+    if data.startswith("deposit_paid:"):
+        request_id = data.split(":", 1)[1]
+        context.user_data["awaiting_upi_ref_for"] = request_id
+        await query.message.reply_text("Payment done? Send the transaction ID / UTR now.")
+        return
+
+    if data.startswith("deposit_cancel:"):
+        request_id = data.split(":", 1)[1]
+        try:
+            api_send(f"/payment-requests/{request_id}/cancel", "POST", {})
+        except Exception:
+            pass
+        context.user_data["awaiting_upi_ref_for"] = ""
+        await query.message.reply_text("Deposit request cancelled.")
         return
 
     if data.startswith("prod:"):
@@ -1231,7 +1417,7 @@ def build_application() -> Application:
         token = settings().get("bot_token", "")
     if not token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN missing.")
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(on_button_click))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.ALL | filters.Sticker.ALL, on_media_message))
