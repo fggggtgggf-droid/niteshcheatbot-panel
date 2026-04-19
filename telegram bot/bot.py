@@ -6,6 +6,7 @@ import html
 import json
 import logging
 import os
+import socket
 import time
 import urllib.parse
 import urllib.request
@@ -31,6 +32,7 @@ logging.basicConfig(
 )
 LOGGER = logging.getLogger(__name__)
 _CACHE: dict[str, dict] = {}
+_INSTANCE_LOCK: socket.socket | None = None
 
 
 def api_get(path: str):
@@ -274,6 +276,21 @@ def generated_upi_qr(upi_id: str, amount: int) -> str:
     return f"https://api.qrserver.com/v1/create-qr-code/?size=720x720&data={urllib.parse.quote(upi_uri, safe='')}"
 
 
+def acquire_single_instance_lock() -> None:
+    global _INSTANCE_LOCK
+    if _INSTANCE_LOCK is not None:
+        return
+    lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        lock_socket.bind(("127.0.0.1", 48763))
+        lock_socket.listen(1)
+        _INSTANCE_LOCK = lock_socket
+    except OSError as exc:
+        lock_socket.close()
+        raise RuntimeError("Another bot instance is already running.") from exc
+
+
 def build_reply_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
     rows = [
         [KeyboardButton("Shop"), KeyboardButton("My Orders")],
@@ -472,6 +489,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_user or not update.message:
         return
     user = update.effective_user
+    try:
+        start_gate = api_send("/bot-events/start-check", "POST", {"telegram_id": str(user.id), "cooldown": 8})
+        if not start_gate.get("allow"):
+            return
+    except Exception:
+        pass
     if is_admin(user.id) or is_owner(user.id):
         sync_admin_profile(user)
     api_send(
@@ -514,19 +537,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await context.bot.delete_message(chat_id=user.id, message_id=last_start_message_id)
         except Exception:
             pass
-    try:
-        photos = await context.bot.get_user_profile_photos(user.id, limit=1)
-        if photos.photos:
-            sent = await update.message.reply_photo(
-                photo=photos.photos[0][-1].file_id,
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=build_main_menu(),
-            )
-        else:
-            sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
-    except Exception:
-        sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
+    sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
     context.user_data["last_start_message_id"] = sent.message_id
 
 
@@ -1426,6 +1437,7 @@ def build_application() -> Application:
 
 
 async def run_bot() -> None:
+    acquire_single_instance_lock()
     LOGGER.info("Starting Telegram bot polling...")
     app = build_application()
     await app.initialize()
