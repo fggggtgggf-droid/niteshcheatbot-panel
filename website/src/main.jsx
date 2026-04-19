@@ -37,17 +37,28 @@ function buildTheme(settings) {
           root: {
             backgroundImage: `linear-gradient(180deg, ${surface} 0%, ${surfaceAlt} 100%)`,
             border: `1px solid ${primary}33`,
-            boxShadow: `0 20px 45px rgba(4, 2, 6, 0.58), inset 0 1px 0 rgba(255,255,255,0.04)`,
+            boxShadow: `0 22px 54px rgba(0, 0, 0, 0.52), inset 0 1px 0 rgba(255,255,255,0.06), 0 0 0 1px rgba(255,255,255,0.02)`,
             position: 'relative',
             overflow: 'hidden',
+            backdropFilter: 'blur(12px)',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              inset: 0,
+              background: `linear-gradient(120deg, transparent 0%, ${primary}10 35%, transparent 70%)`,
+              transform: 'translateX(-100%)',
+              animation: 'panelShine 9s linear infinite',
+              pointerEvents: 'none',
+            },
           },
         },
       },
       MuiAppBar: {
         styleOverrides: {
           root: {
-            background: 'rgba(9, 7, 11, 0.78)',
+            background: 'rgba(10, 7, 12, 0.68)',
             borderBottom: `1px solid ${primary}22`,
+            boxShadow: '0 8px 30px rgba(0,0,0,0.28)',
           },
         },
       },
@@ -58,7 +69,7 @@ function buildTheme(settings) {
             fontWeight: 700,
             borderRadius: 14,
             paddingInline: 18,
-            transition: 'transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease',
+            transition: 'transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, filter 160ms ease',
           },
           contained: {
             backgroundColor: buttonBg,
@@ -67,6 +78,7 @@ function buildTheme(settings) {
             '&:hover': {
               backgroundColor: buttonHover,
               transform: 'translateY(-1px)',
+              filter: 'brightness(1.06)',
             },
             '&.Mui-disabled': {
               backgroundColor: buttonDisabled,
