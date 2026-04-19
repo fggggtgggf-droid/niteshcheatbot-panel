@@ -50,7 +50,7 @@ def api_send(path: str, method: str, payload: dict | None = None):
 
 
 def settings():
-    return api_get("/settings")
+    return api_get("/runtime-settings")
 
 
 def media_input(media: str, fallback_name: str = "upload.jpg"):
