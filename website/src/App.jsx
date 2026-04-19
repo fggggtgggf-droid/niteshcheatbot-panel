@@ -24,7 +24,6 @@ import PaymentRequestsTab from './tabs/PaymentRequestsTab.jsx'
 import ResetRequestsTab from './tabs/ResetRequestsTab.jsx'
 import ReportsTab from './tabs/ReportsTab.jsx'
 import AdminProfileTab from './tabs/AdminProfileTab.jsx'
-import MembershipTab from './tabs/MembershipTab.jsx'
 import OwnerPlansTab from './tabs/OwnerPlansTab.jsx'
 import LoginPage from './LoginPage.jsx'
 import { apiGet } from './api.js'
@@ -34,7 +33,6 @@ const drawerWidth = 260
 const adminTabs = [
   { id: 'dashboard', label: 'Dashboard', component: DashboardTab },
   { id: 'profile', label: 'Profile', component: AdminProfileTab },
-  { id: 'membership', label: 'Membership', component: MembershipTab },
   { id: 'announcements', label: 'Announcements', component: AnnouncementsTab },
   { id: 'users', label: 'Manage Users', component: UsersTab },
   { id: 'resellers', label: 'Manage Resellers', component: ManageResellersTab },
@@ -141,13 +139,7 @@ export default function App() {
       .catch(() => setAdminAccess({ active: false, reason: 'lookup_failed', record: {} }))
   }, [authenticated, isOwnerRoute, sessionAdminId, sessionTelegramId])
 
-  const visibleTabs = useMemo(() => {
-    if (isOwnerRoute) return tabs
-    if (!sessionAdminId || !adminAccess?.active) {
-      return tabs.filter((tab) => ['membership'].includes(tab.id))
-    }
-    return tabs
-  }, [adminAccess?.active, isOwnerRoute, sessionAdminId, tabs])
+  const visibleTabs = useMemo(() => tabs, [tabs])
 
   useEffect(() => {
     if (!visibleTabs.some((tab) => tab.id === activeTab)) {
