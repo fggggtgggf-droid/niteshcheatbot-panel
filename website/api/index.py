@@ -157,14 +157,15 @@ def list_activity_logs(admin_id: str | None = None, action: str | None = None) -
 def normalize_admin_record(payload: dict) -> dict:
     now = datetime.now()
     current = dict(payload)
-    custom_days = int(current.get("custom_days", current.get("plan_days", 30)) or 30)
+    custom_days = int(current.get("custom_days", current.get("plan_days", 0)) or 0)
     subscription_price = float(current.get("subscription_price", current.get("price", 0)) or 0)
-    starts_at = parse_dt(current.get("starts_at") or current.get("start_date")) or now
-    expires_at = parse_dt(current.get("expires_at") or current.get("expiry_date")) or (starts_at + timedelta(days=max(custom_days, 1)))
-    days_left = max(0, (expires_at - now).days + (1 if expires_at > now else 0))
-    status = str(current.get("status", "active") or "active").strip().lower()
-    if expires_at <= now and status == "active":
-        status = "expired"
+    starts_at = parse_dt(current.get("starts_at") or current.get("start_date"))
+    expires_at = parse_dt(current.get("expires_at") or current.get("expiry_date"))
+    raw_status = str(current.get("status", "active") or "active").strip().lower()
+    status = "suspended" if raw_status in {"suspended", "disabled", "banned"} else "active"
+    if not starts_at:
+        starts_at = now
+    days_left = 9999 if status == "active" else 0
     telegram_id = str(current.get("telegram_chat_id", current.get("telegram_id", ""))).strip()
     plan_id = str(current.get("plan_id", "")).strip()
     login_email = normalize_login_email(current.get("login_email", ""))
@@ -181,9 +182,9 @@ def normalize_admin_record(payload: dict) -> dict:
         "parent_admin_id": str(current.get("parent_admin_id", "")).strip(),
         "panel_role": str(current.get("panel_role", "admin") or "admin").strip(),
         "plan_id": plan_id,
-        "plan_name": str(current.get("plan_name", "Custom Plan") or "Custom Plan").strip(),
+        "plan_name": str(current.get("plan_name", "Lifetime Access") or "Lifetime Access").strip(),
         "subscription_price": subscription_price,
-        "custom_days": max(custom_days, 1),
+        "custom_days": max(custom_days, 0),
         "starts_at": format_dt(starts_at),
         "start_date": format_dt(starts_at),
         "expires_at": format_dt(expires_at),
@@ -234,6 +235,18 @@ def active_super_admins() -> list[dict]:
         if access.get("active"):
             items.append(access.get("record") or normalized)
     return items
+
+
+def primary_admin_contact() -> dict:
+    items = active_super_admins()
+    if not items:
+        return {"username": "", "telegram_id": "", "name": "Admin"}
+    first = items[0]
+    return {
+        "username": str(first.get("username", "")).strip(),
+        "telegram_id": str(first.get("telegram_id", "")).strip(),
+        "name": str(first.get("name", "")).strip() or "Admin",
+    }
 
 
 def json_body() -> dict:
@@ -463,6 +476,8 @@ def send_telegram_media(chat_id: str, media_type: str, media: str, caption: str)
         return _telegram_request("sendPhoto", {"chat_id": str(chat_id), "photo": media, "caption": caption})
     if media_type == "video":
         return _telegram_request("sendVideo", {"chat_id": str(chat_id), "video": media, "caption": caption})
+    if media_type == "sticker":
+        return _telegram_request("sendSticker", {"chat_id": str(chat_id), "sticker": media})
     return send_telegram_message(chat_id, caption)
 
 
@@ -478,7 +493,7 @@ def system_status():
         {
             "bot_enabled": len(active_admins) > 0,
             "active_super_admins": len(active_admins),
-            "maintenance_message": "Admin subscription is not active right now. Bot is temporarily in maintenance mode.",
+            "maintenance_message": "Bot is temporarily in maintenance mode. Please contact admin.",
         }
     )
 
@@ -546,6 +561,21 @@ def settings_update():
     return jsonify({"status": "ok"})
 
 
+@app.post("/api/admin-password")
+def admin_password_update():
+    payload = json_body()
+    new_password = str(payload.get("password", "")).strip()
+    if len(new_password) < 3:
+        return jsonify({"error": "Password too short"}), 400
+    set_settings({"admin_password": new_password})
+    return jsonify({"status": "ok"})
+
+
+@app.get("/api/admin-contact")
+def admin_contact_get():
+    return jsonify(primary_admin_contact())
+
+
 @app.post("/api/admins/link-chat")
 def admins_link_chat():
     payload = json_body()
@@ -553,8 +583,26 @@ def admins_link_chat():
     admin_id = str(payload.get("admin_id", "")).strip()
     access = admin_access_by_id(admin_id) if admin_id else admin_access_record(telegram_id)
     record = access.get("record") or {}
+    if not record and telegram_id:
+        created_id = create_item(
+            "admins",
+            normalize_admin_record(
+                {
+                    "telegram_id": telegram_id,
+                    "telegram_chat_id": telegram_id,
+                    "name": "Panel Admin",
+                    "username": "",
+                    "panel_role": "admin",
+                    "plan_name": "Lifetime Access",
+                    "status": "active",
+                }
+            ),
+        )
+        log_activity(created_id, "admin_created_from_profile_link", {"telegram_id": telegram_id})
+        access = admin_access_by_id(created_id)
+        record = access.get("record") or {}
     if not record:
-        return jsonify({"success": False, "error": "No website super admin account is loaded in this session yet. First buy or renew a plan from Membership, then you can link Telegram access here."})
+        return jsonify({"success": False, "error": "Unable to attach Telegram Chat ID right now."})
     update_item(
         "admins",
         str(record.get("id", "")),
@@ -666,6 +714,7 @@ def payment_settings_get():
     return jsonify(
         {
             "qr": settings.get("payment_qr", ""),
+            "upi_id": settings.get("payment_upi_id", ""),
             "use_upi": int(settings.get("payment_mode_upi", "1") or 1),
             "use_gateway": int(settings.get("payment_mode_gateway", "0") or 0),
         }
@@ -678,6 +727,7 @@ def payment_settings_update():
     set_settings(
         {
             "payment_qr": str(payload.get("qr", "")).strip(),
+            "payment_upi_id": str(payload.get("upi_id", "")).strip(),
             "payment_mode_upi": "1" if int(payload.get("use_upi", 1) or 1) else "0",
             "payment_mode_gateway": "1" if int(payload.get("use_gateway", 0) or 0) else "0",
         }
