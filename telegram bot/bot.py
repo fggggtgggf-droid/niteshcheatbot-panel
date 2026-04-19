@@ -41,6 +41,15 @@ _CACHE: dict[str, dict] = {}
 _INSTANCE_LOCK: socket.socket | None = None
 
 
+def bot_token() -> str:
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        token = settings().get("bot_token", "")
+    if not token:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN missing.")
+    return token
+
+
 def api_get(path: str):
     with urllib.request.urlopen(f"{API_BASE}{path}", timeout=12) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -496,18 +505,6 @@ def deposit_method_rows(needed: int = 0) -> list[list[InlineKeyboardButton]]:
     return rows
 
 
-def deposit_amount_rows(needed: int = 0) -> list[list[InlineKeyboardButton]]:
-    rows = [
-        [InlineKeyboardButton("💸 Rs 100", callback_data="deposit_amt:100"), InlineKeyboardButton("💸 Rs 200", callback_data="deposit_amt:200")],
-        [InlineKeyboardButton("💸 Rs 300", callback_data="deposit_amt:300"), InlineKeyboardButton("💸 Rs 400", callback_data="deposit_amt:400")],
-        [InlineKeyboardButton("💸 Rs 500", callback_data="deposit_amt:500"), InlineKeyboardButton("✍ Custom Amount", callback_data="deposit_custom")],
-    ]
-    if needed > 0:
-        rows.insert(0, [InlineKeyboardButton(f"✅ Deposit Exact Rs {needed}", callback_data=f"deposit_amt:{needed}")])
-    rows.append([InlineKeyboardButton("◀ Back to Deposit", callback_data="deposit_now")])
-    return rows
-
-
 def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
     pay_settings = payment_settings()
     upi_id = str(pay_settings.get("upi_id", "")).strip()
@@ -536,9 +533,9 @@ def deposit_amount_prompt_text(user_id: int, needed: int = 0) -> str:
     lines = [wallet_text(user_id)]
     if needed > 0:
         lines.append(f"Required to continue: Rs {needed}")
-    lines.append("💠 Select the amount you want to add.")
+    lines.append("💠 Enter the amount you want to deposit.")
     lines.append(f"Allowed range: Rs {minimum} to Rs {maximum}")
-    lines.append("After payment, send the transaction ID / UTR.")
+    lines.append("After you send the amount, QR will be generated automatically.")
     return premium_card("SELECT AMOUNT", lines)
 
 
@@ -866,7 +863,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if context.user_data.get("awaiting_custom_deposit_amount") == "1":
         raw_amount = (update.message.text or "").strip()
         if not raw_amount.isdigit():
-            await update.message.reply_text("Valid amount bhejo. Example: 250")
+            suggested = str(context.user_data.get("suggested_deposit_amount", "") or "").strip()
+            hint = f" Example: {suggested}" if suggested else " Example: 250"
+            await update.message.reply_text(f"Valid amount bhejo.{hint}")
             return
         amount = int(raw_amount)
         minimum, maximum = deposit_limits()
@@ -887,6 +886,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             },
         )
         context.user_data["awaiting_custom_deposit_amount"] = ""
+        context.user_data["suggested_deposit_amount"] = ""
         await send_deposit_checkout_message(update.message, update.effective_user.id, amount, str(req.get("id", "")))
         return
 
@@ -1299,26 +1299,29 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "deposit_method_upi":
+        context.user_data["awaiting_custom_deposit_amount"] = "1"
+        context.user_data["suggested_deposit_amount"] = ""
         await delete_previous(query)
         await query.message.reply_text(
             deposit_amount_prompt_text(query.from_user.id),
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(deposit_amount_rows()),
         )
         return
 
     if data.startswith("deposit_method_upi:"):
         needed = int(data.split(":", 1)[1])
+        context.user_data["awaiting_custom_deposit_amount"] = "1"
+        context.user_data["suggested_deposit_amount"] = str(needed)
         await delete_previous(query)
         await query.message.reply_text(
             deposit_amount_prompt_text(query.from_user.id, needed),
             parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(deposit_amount_rows(needed)),
         )
         return
 
     if data == "deposit_custom":
         context.user_data["awaiting_custom_deposit_amount"] = "1"
+        context.user_data["suggested_deposit_amount"] = ""
         await query.message.reply_text(
             premium_card(
                 "CUSTOM DEPOSIT",
@@ -1329,29 +1332,6 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             ),
             parse_mode="HTML",
         )
-        return
-
-    if data.startswith("deposit_amt:"):
-        amount = int(data.split(":", 1)[1])
-        minimum, maximum = deposit_limits()
-        if amount < minimum or amount > maximum:
-            await query.message.reply_text(f"Amount Rs {minimum} se Rs {maximum} ke beech allowed hai.")
-            return
-        req = api_send(
-            "/payment-requests",
-            "POST",
-            {
-                "type": "wallet_topup",
-                "telegram_id": str(query.from_user.id),
-                "username": str(query.from_user.username or ""),
-                "first_name": str(query.from_user.first_name or "User"),
-                "amount": amount,
-                "product_id": "",
-                "plan_id": "",
-            },
-        )
-        await delete_previous(query)
-        await send_deposit_checkout_message(query.message, query.from_user.id, amount, str(req.get("id", "")))
         return
 
     if data.startswith("deposit_paid:"):
@@ -1658,17 +1638,64 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 def build_application() -> Application:
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not token:
-        token = settings().get("bot_token", "")
-    if not token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN missing.")
-    app = Application.builder().token(token).concurrent_updates(True).build()
+    app = Application.builder().token(bot_token()).concurrent_updates(True).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(on_button_click))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.ANIMATION | filters.Document.ALL | filters.Sticker.ALL, on_media_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     return app
+
+
+async def run_reminder_loop(app: Application) -> None:
+    last_notice_by_admin: dict[str, str] = {}
+    last_global_status = {"enabled": None}
+
+    while True:
+        try:
+            current_status = system_status()
+            enabled = bool(current_status.get("bot_enabled", False))
+            if last_global_status["enabled"] is None:
+                last_global_status["enabled"] = enabled
+            elif enabled and last_global_status["enabled"] is False:
+                for user in list_users():
+                    chat_id = str(user.get("telegram_id", "")).strip()
+                    if not chat_id:
+                        continue
+                    try:
+                        await app.bot.send_message(
+                            chat_id=chat_id,
+                            text="Bot is now live again.\nAll features are available now.",
+                        )
+                    except Exception:
+                        continue
+                last_global_status["enabled"] = enabled
+            else:
+                last_global_status["enabled"] = enabled
+            today_key = time.strftime("%Y-%m-%d")
+            for admin in list_admin_records():
+                chat_id = str(admin.get("telegram_id", "")).strip()
+                if not chat_id:
+                    continue
+                days_left = int(admin.get("days_left", 0) or 0)
+                status = str(admin.get("status", "") or "")
+                should_notify = status == "expired" or days_left <= 2
+                notice_key = f"{today_key}:{status}:{days_left}"
+                if should_notify and last_notice_by_admin.get(chat_id) != notice_key:
+                    text = (
+                        f"Panel renewal alert\n"
+                        f"Status: {status or 'active'}\n"
+                        f"Days left: {days_left}\n"
+                        f"Expiry: {admin.get('expires_at', '-')}\n"
+                        f"Contact owner to renew your panel access."
+                    )
+                    try:
+                        await app.bot.send_message(chat_id=chat_id, text=text)
+                        last_notice_by_admin[chat_id] = notice_key
+                    except Exception:
+                        continue
+        except Exception as exc:
+            LOGGER.warning("Reminder loop error: %s", exc)
+        await asyncio.sleep(3600)
 
 
 async def run_bot() -> None:
@@ -1678,58 +1705,8 @@ async def run_bot() -> None:
     await app.initialize()
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
-    last_notice_by_admin: dict[str, str] = {}
-    last_global_status = {"enabled": None}
 
-    async def reminder_loop() -> None:
-        while True:
-            try:
-                current_status = system_status()
-                enabled = bool(current_status.get("bot_enabled", False))
-                if last_global_status["enabled"] is None:
-                    last_global_status["enabled"] = enabled
-                elif enabled and last_global_status["enabled"] is False:
-                    for user in list_users():
-                        chat_id = str(user.get("telegram_id", "")).strip()
-                        if not chat_id:
-                            continue
-                        try:
-                            await app.bot.send_message(
-                                chat_id=chat_id,
-                                text="Bot is now live again.\nAll features are available now.",
-                            )
-                        except Exception:
-                            continue
-                    last_global_status["enabled"] = enabled
-                else:
-                    last_global_status["enabled"] = enabled
-                today_key = time.strftime("%Y-%m-%d")
-                for admin in list_admin_records():
-                    chat_id = str(admin.get("telegram_id", "")).strip()
-                    if not chat_id:
-                        continue
-                    days_left = int(admin.get("days_left", 0) or 0)
-                    status = str(admin.get("status", "") or "")
-                    should_notify = status == "expired" or days_left <= 2
-                    notice_key = f"{today_key}:{status}:{days_left}"
-                    if should_notify and last_notice_by_admin.get(chat_id) != notice_key:
-                        text = (
-                            f"Panel renewal alert\n"
-                            f"Status: {status or 'active'}\n"
-                            f"Days left: {days_left}\n"
-                            f"Expiry: {admin.get('expires_at', '-')}\n"
-                            f"Contact owner to renew your panel access."
-                        )
-                        try:
-                            await app.bot.send_message(chat_id=chat_id, text=text)
-                            last_notice_by_admin[chat_id] = notice_key
-                        except Exception:
-                            continue
-            except Exception as exc:
-                LOGGER.warning("Reminder loop error: %s", exc)
-            await asyncio.sleep(3600)
-
-    reminder_task = asyncio.create_task(reminder_loop())
+    reminder_task = asyncio.create_task(run_reminder_loop(app))
     try:
         await asyncio.Event().wait()
     finally:
