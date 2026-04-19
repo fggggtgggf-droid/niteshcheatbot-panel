@@ -25,9 +25,10 @@ from telegram.ext import (
 
 DEFAULT_PUBLIC_PANEL_URL = "https://niteshcheatbot.vercel.app"
 PUBLIC_PANEL_URL = os.getenv("PUBLIC_PANEL_URL", DEFAULT_PUBLIC_PANEL_URL).rstrip("/")
+REMOTE_PLATFORM = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RENDER") or os.getenv("PORT"))
 API_BASE = os.getenv(
     "PANEL_API_BASE",
-    f"{PUBLIC_PANEL_URL}/api" if os.getenv("RAILWAY_ENVIRONMENT") else "http://127.0.0.1:5000/api",
+    f"{PUBLIC_PANEL_URL}/api" if REMOTE_PLATFORM else "http://127.0.0.1:5000/api",
 ).rstrip("/")
 
 logging.basicConfig(
