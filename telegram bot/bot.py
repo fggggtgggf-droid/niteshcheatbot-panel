@@ -12,6 +12,7 @@ import urllib.parse
 import urllib.request
 from io import BytesIO
 
+import qrcode
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -41,7 +42,7 @@ _INSTANCE_LOCK: socket.socket | None = None
 
 
 def api_get(path: str):
-    with urllib.request.urlopen(f"{API_BASE}{path}", timeout=25) as response:
+    with urllib.request.urlopen(f"{API_BASE}{path}", timeout=12) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -53,7 +54,7 @@ def api_send(path: str, method: str, payload: dict | None = None):
         headers={"Content-Type": "application/json"},
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=25) as response:
+    with urllib.request.urlopen(request, timeout=12) as response:
         result = json.loads(response.read().decode("utf-8"))
     _CACHE.clear()
     return result
@@ -104,14 +105,18 @@ def get_wallet_balance(telegram_id: int) -> float:
 
 
 def list_users():
-    return api_get("/users")
+    return cached_api_get("/users", ttl=4.0)
 
 
 def get_user_by_telegram_id(telegram_id: int):
-    for user in list_users():
-        if str(user.get("telegram_id", "")) == str(telegram_id):
-            return user
-    return None
+    try:
+        user = cached_api_get(f"/users/by-telegram/{urllib.parse.quote(str(telegram_id))}", ttl=2.0)
+        return user or None
+    except Exception:
+        for user in list_users():
+            if str(user.get("telegram_id", "")) == str(telegram_id):
+                return user
+        return None
 
 
 def is_captcha_verified(user: dict | None) -> bool:
@@ -288,6 +293,19 @@ def build_upi_uri(upi_id: str, amount: int) -> str:
 def generated_upi_qr(upi_id: str, amount: int) -> str:
     upi_uri = build_upi_uri(upi_id, amount)
     return f"https://api.qrserver.com/v1/create-qr-code/?size=720x720&data={urllib.parse.quote(upi_uri, safe='')}"
+
+
+def generated_upi_qr_image(upi_id: str, amount: int):
+    upi_uri = build_upi_uri(upi_id, amount)
+    qr = qrcode.QRCode(version=None, box_size=12, border=3)
+    qr.add_data(upi_uri)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    stream.name = f"upi-{amount}.png"
+    stream.seek(0)
+    return stream
 
 
 def acquire_single_instance_lock() -> None:
@@ -501,7 +519,7 @@ async def send_deposit_checkout_message(message, user_id: int, amount: int, requ
     pay_settings = payment_settings()
     upi_id = str(pay_settings.get("upi_id", "")).strip()
     static_qr = str(pay_settings.get("qr", "")).strip()
-    qr_source = generated_upi_qr(upi_id, amount) if upi_id else static_qr
+    qr_source = generated_upi_qr_image(upi_id, amount) if upi_id else static_qr
     lines = [
         wallet_text(user_id),
         f"Amount: Rs {int(amount)}",
@@ -998,7 +1016,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     if not query or not query.from_user:
         return
-    await query.answer()
+    await query.answer(cache_time=0)
     if is_admin(query.from_user.id) or is_owner(query.from_user.id):
         sync_admin_profile(query.from_user)
     current_user = get_user_by_telegram_id(query.from_user.id)

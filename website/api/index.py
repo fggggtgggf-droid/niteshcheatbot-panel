@@ -761,6 +761,15 @@ def users_get():
     return jsonify(list_users(request.args.get("q"), request.args.get("status")))
 
 
+@app.get("/api/users/by-telegram/<telegram_id>")
+def users_by_telegram_get(telegram_id: str):
+    target = str(telegram_id or "").strip()
+    if not target:
+        return jsonify({})
+    user = next((item for item in list_collection("users") if str(item.get("telegram_id", "")).strip() == target), {})
+    return jsonify(user or {})
+
+
 @app.post("/api/users")
 def users_create():
     return jsonify({"id": create_user(json_body())})
