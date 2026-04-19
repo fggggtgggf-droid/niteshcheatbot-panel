@@ -15,7 +15,7 @@ import {
 import { apiGet, apiSend } from '../api.js'
 
 export default function PaymentRequestsTab() {
-  const [settings, setSettings] = useState({ qr: '', use_upi: 1, use_gateway: 0 })
+  const [settings, setSettings] = useState({ qr: '', upi_id: '', use_upi: 1, use_gateway: 0 })
   const [globalSettings, setGlobalSettings] = useState({})
   const [requests, setRequests] = useState([])
   const [products, setProducts] = useState([])
@@ -100,6 +100,12 @@ export default function PaymentRequestsTab() {
           <Stack spacing={2}>
             {Number(settings.use_gateway) !== 1 ? (
               <Stack spacing={2}>
+                <TextField
+                  label="UPI ID"
+                  value={settings.upi_id || ''}
+                  onChange={(event) => setSettings((prev) => ({ ...prev, upi_id: event.target.value }))}
+                  fullWidth
+                />
                 <TextField
                   label="Payment QR (Image URL / Telegram file_id / uploaded image)"
                   value={settings.qr || ''}
