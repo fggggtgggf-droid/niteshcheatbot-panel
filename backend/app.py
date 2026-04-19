@@ -976,6 +976,16 @@ def payment_requests_mark_paid(item_id: str):
     return jsonify({"status": "ok"})
 
 
+@app.post("/api/payment-requests/<item_id>/cancel")
+def payment_requests_cancel(item_id: str):
+    update_item(
+        "payment_requests",
+        item_id,
+        {"status": "cancelled", "admin_note": "Cancelled by user", "updated_at": now_str()},
+    )
+    return jsonify({"status": "ok"})
+
+
 @app.post("/api/payment-requests/<item_id>/reject")
 def payment_requests_reject(item_id: str):
     payload = json_body()
