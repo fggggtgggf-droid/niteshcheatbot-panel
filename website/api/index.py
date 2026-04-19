@@ -524,7 +524,14 @@ def settings_get():
     data = dict(get_settings())
     data.pop("admin_password", None)
     data.pop("owner_password", None)
+    data.pop("bot_token", None)
+    data.pop("cashfree_secret_key", None)
     return jsonify(data)
+
+
+@app.get("/api/runtime-settings")
+def runtime_settings_get():
+    return jsonify(dict(get_settings()))
 
 
 @app.put("/api/settings")
