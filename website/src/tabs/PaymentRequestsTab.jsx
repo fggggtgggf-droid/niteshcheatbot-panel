@@ -52,10 +52,13 @@ export default function PaymentRequestsTab() {
 
   const saveSettings = async () => {
     await apiSend('/payment-settings', 'PUT', settings)
-    await apiSend('/settings', 'PUT', {
+    const secretPayload = {
       cashfree_app_id: globalSettings.cashfree_app_id || '',
-      cashfree_secret_key: globalSettings.cashfree_secret_key || '',
-    })
+    }
+    if ((globalSettings.cashfree_secret_key || '').trim()) {
+      secretPayload.cashfree_secret_key = globalSettings.cashfree_secret_key
+    }
+    await apiSend('/settings', 'PUT', secretPayload)
     setMessage('Payment settings saved')
     refresh()
   }
@@ -127,6 +130,7 @@ export default function PaymentRequestsTab() {
               label="Cashfree Secret Key"
               value={globalSettings.cashfree_secret_key || ''}
               onChange={(event) => setGlobalSettings((prev) => ({ ...prev, cashfree_secret_key: event.target.value }))}
+              placeholder="Leave blank to keep current secret"
               fullWidth
             />
             <Stack direction="row" spacing={2}>
