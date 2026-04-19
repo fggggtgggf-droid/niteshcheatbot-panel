@@ -49,7 +49,7 @@ const ownerTabs = [
   { id: 'dashboard', label: 'Owner Dashboard', component: DashboardTab },
   { id: 'plans', label: 'Plans', component: OwnerPlansTab },
   { id: 'admins', label: 'Admin Manage', component: AdminsTab },
-  { id: 'payments', label: 'Payments & Gateway', component: PaymentRequestsTab },
+  { id: 'payments', label: 'Payments', component: PaymentRequestsTab },
   { id: 'customization', label: 'Brand Settings', component: CustomizationTab },
 ]
 
