@@ -280,7 +280,25 @@ def wallet_text(telegram_id: int) -> str:
 
 def highlighted_label(label: str) -> str:
     clean = str(label or "").strip()
-    return f"❖ {clean} ❖" if clean else ""
+    return clean
+
+
+def current_user_role(telegram_id: int) -> str:
+    user = get_user_by_telegram_id(telegram_id) or {}
+    role = str(user.get("role", "user") or "user").strip().lower()
+    return role if role in {"user", "reseller", "admin"} else "user"
+
+
+def role_text(telegram_id: int) -> str:
+    role = current_user_role(telegram_id)
+    return f"Status: {'Reseller' if role == 'reseller' else 'User'}"
+
+
+def plan_price_for_user(plan: dict, telegram_id: int) -> float:
+    reseller_price = float(plan.get("reseller_price", 0) or 0)
+    if current_user_role(telegram_id) == "reseller" and reseller_price > 0:
+        return reseller_price
+    return float(plan.get("price", 0) or 0)
 
 
 def admin_contact_line() -> str:
@@ -292,6 +310,17 @@ def admin_contact_line() -> str:
     if telegram_id:
         return f"Contact Admin ID: {telegram_id}"
     return "Contact Admin for assistance."
+
+
+def support_lines(app_settings: dict) -> list[str]:
+    items = [str(app_settings.get("support_text", "") or "").strip()]
+    telegram_link = str(app_settings.get("telegram_support_link", "") or "").strip()
+    whatsapp_link = str(app_settings.get("whatsapp_support_link", "") or "").strip()
+    if telegram_link:
+        items.append(f"Telegram: {telegram_link}")
+    if whatsapp_link:
+        items.append(f"WhatsApp: {whatsapp_link}")
+    return [item for item in items if item]
 
 
 def payment_settings() -> dict:
@@ -399,10 +428,11 @@ def build_product_menu(product_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-def build_plan_menu(product_id: str) -> InlineKeyboardMarkup:
+def build_plan_menu(product_id: str, telegram_id: int) -> InlineKeyboardMarkup:
     rows = []
     for plan in list_plans(product_id):
-        label = f"💠 {plan['name']} • Rs {int(float(plan.get('price', 0)))}"
+        price = int(plan_price_for_user(plan, telegram_id))
+        label = f"💠 {plan['name']} • Rs {price}"
         if int(plan.get("stock", 0)) <= 0:
             label = f"{label} • Out of Stock"
         rows.append([InlineKeyboardButton(highlighted_label(label), callback_data=f"plan:{plan['id']}")])
@@ -446,6 +476,23 @@ def premium_card(title: str, lines: list[str]) -> str:
     ]
     if tagline:
         header.append(f"┃ {html.escape(tagline)}")
+    footer = "╰━━━━━━━━━━━━━✦"
+    return "\n".join(header + ([body] if body else []) + [footer])
+
+
+def premium_card_html(title: str, lines: list[str]) -> str:
+    app_settings = settings()
+    card_title = html.escape(str(app_settings.get("bot_card_title", "SELLER BOT") or "SELLER BOT"))
+    tagline = html.escape(str(app_settings.get("bot_card_tagline", "") or ""))
+    safe_title = html.escape(str(title or ""))
+    body = "\n".join(f"┃ {line}" for line in lines if str(line).strip())
+    header = [
+        "╭━━━━━━━━━━━━━✦",
+        f"┃ <b>{card_title}</b>",
+        f"┃ <b>{safe_title}</b>",
+    ]
+    if tagline:
+        header.append(f"┃ {tagline}")
     footer = "╰━━━━━━━━━━━━━✦"
     return "\n".join(header + ([body] if body else []) + [footer])
 
@@ -522,7 +569,7 @@ def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
         lines.append(f"Need Rs {needed} more to complete this purchase.")
     if upi_id:
         lines.append("💳 Choose your deposit method below.")
-        lines.append(f"UPI ID: {upi_id}")
+        lines.append(f"UPI ID: <code>{html.escape(upi_id)}</code>")
         lines.append(f"⚠ Minimum: Rs {minimum}")
         lines.append(f"⚠ Maximum: Rs {maximum}")
         lines.append("Tap Pay via UPI and continue.")
@@ -533,7 +580,7 @@ def deposit_prompt_text(user_id: int, needed: int = 0) -> str:
                 admin_contact_line(),
             ]
         )
-    return premium_card("DEPOSIT NOW", lines)
+    return premium_card_html("DEPOSIT NOW", lines)
 
 
 def deposit_amount_prompt_text(user_id: int, needed: int = 0) -> str:
@@ -559,7 +606,7 @@ async def send_deposit_checkout_message(message, user_id: int, amount: int, requ
         f"Amount: Rs {int(amount)}",
     ]
     if upi_id:
-        lines.append(f"UPI ID: {upi_id}")
+        lines.append(f"UPI ID: <code>{html.escape(upi_id)}</code>")
         lines.append("✅ Pay this exact amount using the QR or UPI ID.")
         lines.append("🧾 Then tap I Have Paid and submit your UTR.")
     else:
@@ -571,7 +618,7 @@ async def send_deposit_checkout_message(message, user_id: int, amount: int, requ
             [InlineKeyboardButton("❌ Cancel", callback_data=f"deposit_cancel:{request_id}")],
         ]
     )
-    caption = premium_card("PAYMENT CHECKOUT", lines)
+    caption = premium_card_html("PAYMENT CHECKOUT", lines)
     if qr_source:
         try:
             await message.reply_photo(photo=media_input(qr_source, "upi-qr.jpg"), caption=caption, parse_mode="HTML", reply_markup=markup)
@@ -581,7 +628,7 @@ async def send_deposit_checkout_message(message, user_id: int, amount: int, requ
     fallback_lines = list(lines)
     if upi_id:
         fallback_lines.append("If QR is not visible, pay manually using the UPI ID above.")
-    await message.reply_text(premium_card("PAYMENT CHECKOUT", fallback_lines), parse_mode="HTML", reply_markup=markup)
+    await message.reply_text(premium_card_html("PAYMENT CHECKOUT", fallback_lines), parse_mode="HTML", reply_markup=markup)
 
 
 def build_owner_panel_markup() -> InlineKeyboardMarkup:
@@ -635,6 +682,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         app_settings.get("brand_name", "SELLER BOT"),
         [
             text,
+            role_text(user.id),
             wallet_text(user.id),
         ],
     )
@@ -695,6 +743,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"👤 Name: {user.get('first_name', 'User')}",
                 f"✨ Username: @{user.get('username')}" if user.get("username") else "✨ Username: -",
                 f"🆔 User ID: {update.effective_user.id}",
+                role_text(update.effective_user.id),
                 f"💰 Wallet Balance: Rs {int(user.get('balance', 0) or 0)}",
                 f"📅 Joined On: {user.get('created_at', '-')}",
             ],
@@ -732,15 +781,7 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     app_settings = settings()
     await update.message.reply_text(
-        "\n".join(
-            item
-            for item in [
-                app_settings.get("support_text", ""),
-                f"Telegram: {app_settings.get('telegram_support_link', '')}",
-                f"WhatsApp: {app_settings.get('whatsapp_support_link', '')}",
-            ]
-            if item
-        ),
+        "\n".join(support_lines(app_settings)) or "Support details not configured yet.",
         reply_markup=build_reply_keyboard(update.effective_user.id),
     )
 
@@ -1072,6 +1113,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                   f"👤 Name: {user.get('first_name', 'User')}",
                   f"🔖 Username: @{user.get('username')}" if user.get("username") else "🔖 Username: -",
                   f"🆔 User ID: {update.effective_user.id}",
+                  role_text(update.effective_user.id),
                   f"💰 Wallet: Rs {int(user.get('balance', 0) or 0)}",
                   f"📅 Joined: {user.get('created_at', '-')}",
               ],
@@ -1101,17 +1143,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if text == "support":
         app_settings = settings()
-        await update.message.reply_text(
-            "\n".join(
-                item
-                for item in [
-                    app_settings.get("support_text", ""),
-                    f"Telegram: {app_settings.get('telegram_support_link', '')}",
-                    f"WhatsApp: {app_settings.get('whatsapp_support_link', '')}",
-                ]
-                if item
-            )
-        )
+        await update.message.reply_text("\n".join(support_lines(app_settings)) or "Support details not configured yet.")
         return
     if text == "menu":
         await update.message.reply_text(
@@ -1486,7 +1518,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if not product:
             await query.message.reply_text("Product not found.")
             return
-        lines = [f"🎯 Product: {product['name']}", wallet_text(query.from_user.id)]
+        lines = [f"🎯 Product: {product['name']}", role_text(query.from_user.id), wallet_text(query.from_user.id)]
         if int(product.get("is_recommended", 0)) == 1:
             lines.append("✅ Developer Pick")
         features = [line.strip() for line in str(product.get("features", "")).split("\n") if line.strip()]
@@ -1503,9 +1535,9 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         product_id = data.split(":", 1)[1]
         await delete_previous(query)
         await query.message.reply_text(
-            premium_card("SELECT YOUR PLAN", [wallet_text(query.from_user.id), "💎 Pick the duration you want to buy."]),
+            premium_card("SELECT YOUR PLAN", [role_text(query.from_user.id), wallet_text(query.from_user.id), "💎 Pick the duration you want to buy."]),
             parse_mode="HTML",
-            reply_markup=build_plan_menu(product_id),
+            reply_markup=build_plan_menu(product_id, query.from_user.id),
         )
         return
 
@@ -1528,7 +1560,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.message.reply_text("Out of stock.")
             return
         product = next((item for item in list_products() if str(item["id"]) == str(plan.get("product_id"))), None)
-        price = int(float(plan.get("price", 0)))
+        price = int(plan_price_for_user(plan, query.from_user.id))
         balance = int(get_wallet_balance(query.from_user.id))
         needed = max(0, price - balance)
         caption = premium_card(
@@ -1536,6 +1568,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             [
                 f"🎯 Product: {product.get('name', 'Product') if product else 'Product'}",
                 f"📦 Plan: {plan.get('name', '-')}",
+                role_text(query.from_user.id),
                 f"💸 Price: Rs {price}",
                 f"💼 Wallet: Rs {balance}",
                 f"📊 Stock: {int(plan.get('stock', 0))}",
@@ -1706,6 +1739,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                             f"👤 Name: {user.get('first_name', 'User')}",
                             f"✨ Username: @{user.get('username')}" if user.get("username") else "✨ Username: -",
                             f"🆔 User ID: {query.from_user.id}",
+                            role_text(query.from_user.id),
                             f"💰 Wallet Balance: Rs {int(user.get('balance', 0) or 0)}",
                             f"📅 Joined On: {user.get('created_at', '-')}",
                         ],
@@ -1730,17 +1764,7 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await query.message.reply_text(app_settings.get("how_to_use_text", ""))
                 return
             if action == "support":
-                await query.message.reply_text(
-                    "\n".join(
-                        item
-                        for item in [
-                            app_settings.get("support_text", ""),
-                            f"Telegram: {app_settings.get('telegram_support_link', '')}",
-                            f"WhatsApp: {app_settings.get('whatsapp_support_link', '')}",
-                        ]
-                        if item
-                    )
-                )
+                await query.message.reply_text("\n".join(support_lines(app_settings)) or "Support details not configured yet.")
                 return
             if action == "id_help":
                 await query.message.reply_text(app_settings.get("id_help_text", ""))

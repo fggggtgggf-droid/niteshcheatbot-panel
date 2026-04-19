@@ -1139,7 +1139,9 @@ def purchase_with_wallet():
     plan = next((item for item in list_collection("plans") if str(item.get("id")) == plan_id), None)
     if not plan:
         return jsonify({"error": "Plan not found"}), 404
-    price = float(plan.get("price", 0) or 0)
+    user_role = str(user.get("role", "user") or "user").strip().lower()
+    reseller_price = float(plan.get("reseller_price", 0) or 0)
+    price = reseller_price if user_role == "reseller" and reseller_price > 0 else float(plan.get("price", 0) or 0)
     balance = float(user.get("balance", 0) or 0)
     if balance < price:
         return jsonify({"error": "Insufficient balance", "balance": balance, "price": price}), 409

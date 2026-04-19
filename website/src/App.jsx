@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Alert,
   AppBar,
   Box,
   Button,
   CssBaseline,
   Drawer,
   IconButton,
+  Snackbar,
   Stack,
   Toolbar,
   Typography,
@@ -112,6 +114,7 @@ export default function App() {
   const [sessionLoginEmail, setSessionLoginEmail] = useState(() => sessionStorage.getItem('panel-login-email') || '')
   const [adminAccess, setAdminAccess] = useState(null)
   const [brandName, setBrandName] = useState('REVERSE')
+  const [toast, setToast] = useState({ open: false, message: '', severity: 'success' })
 
   useEffect(() => {
     apiGet('/settings')
@@ -119,6 +122,19 @@ export default function App() {
         setBrandName(settings.brand_name || 'REVERSE')
       })
       .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const handler = (event) => {
+      const detail = event.detail || {}
+      setToast({
+        open: true,
+        message: String(detail.message || 'Saved successfully'),
+        severity: String(detail.severity || 'success'),
+      })
+    }
+    window.addEventListener('panel-toast', handler)
+    return () => window.removeEventListener('panel-toast', handler)
   }, [])
 
   useEffect(() => {
@@ -237,6 +253,21 @@ export default function App() {
           onAdminAccessChange={setAdminAccess}
         />
       </Box>
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={2600}
+        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          severity={toast.severity}
+          variant="filled"
+          onClose={() => setToast((prev) => ({ ...prev, open: false }))}
+          sx={{ width: '100%' }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
