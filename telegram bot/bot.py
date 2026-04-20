@@ -1243,8 +1243,16 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("\n".join(support_lines(app_settings)) or "Support details not configured yet.")
         return
     if text == "menu":
+        app_settings = settings()
         await update.message.reply_text(
-            premium_card("MAIN MENU", [wallet_text(update.effective_user.id), "Tap any button below to continue."]),
+            plain_main_menu_text(
+                update.effective_user.id,
+                app_settings.get("brand_name", "SELLER BOT"),
+                app_settings.get("welcome_text", "Welcome {name}!").format(
+                    name=html.escape(update.effective_user.first_name or "Friend"),
+                    brand_name=app_settings.get("brand_name", "Brand"),
+                ),
+            ),
             parse_mode="HTML",
             reply_markup=build_main_menu(),
         )
