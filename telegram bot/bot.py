@@ -740,12 +740,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_user or not update.message:
         return
     user = update.effective_user
-    try:
-        start_gate = api_send("/bot-events/start-check", "POST", {"telegram_id": str(user.id), "cooldown": 8})
-        if not start_gate.get("allow"):
-            return
-    except Exception:
-        pass
     if is_admin(user.id) or is_owner(user.id):
         sync_admin_profile(user)
     api_send(
