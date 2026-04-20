@@ -290,9 +290,20 @@ def wallet_text(telegram_id: int) -> str:
 
 def highlighted_label(label: str) -> str:
     clean = EMOJI_RE.sub("", str(label or "")).replace("•", " ").strip()
+    clean = re.sub(r"[✦✧✩✪✫✬✭✮✯✰★☆❖❈❉❊❋◆◇◈◉⬥⬦♦]", " ", clean)
+    clean = re.sub(r"[`~_=|]+", " ", clean)
     clean = re.sub(r"\s+", " ", clean)
     clean = re.sub(r"^[^\w]+", "", clean, flags=re.UNICODE)
     clean = re.sub(r"[^\w]+$", "", clean, flags=re.UNICODE)
+    return clean.strip()
+
+
+def sanitize_heading(text: str) -> str:
+    clean = EMOJI_RE.sub("", str(text or "")).strip()
+    clean = re.sub(r"[✦✧✩✪✫✬✭✮✯✰★☆❖❈❉❊❋◆◇◈◉⬥⬦♦]+", " ", clean)
+    clean = re.sub(r"[─━│┃┄┅┆┇┈┉┊┋╌╍╎╏═║╔╗╚╝╠╣╦╩╬┌┐└┘├┤┬┴┼]+", " ", clean)
+    clean = re.sub(r"[`~_=|]+", " ", clean)
+    clean = re.sub(r"\s+", " ", clean)
     return clean.strip()
 
 
@@ -503,14 +514,16 @@ async def send_captcha_prompt(message, context: ContextTypes.DEFAULT_TYPE, user_
 
 def premium_card(title: str, lines: list[str]) -> str:
     app_settings = settings()
-    card_title = str(app_settings.get("bot_card_title", "SELLER BOT") or "SELLER BOT").strip()
-    tagline = str(app_settings.get("bot_card_tagline", "") or "").strip()
-    safe_title = html.escape(str(title or "").strip())
+    card_title = sanitize_heading(str(app_settings.get("bot_card_title", "") or "").strip())
+    if not card_title:
+        card_title = sanitize_heading(str(app_settings.get("brand_name", "SELLER BOT") or "SELLER BOT").strip())
+    tagline = sanitize_heading(str(app_settings.get("bot_card_tagline", "") or "").strip())
+    safe_title = sanitize_heading(str(title or "").strip())
     header = []
     if card_title:
-        header.append(f"🔥 <b>{html.escape(card_title)}</b> 🔥")
-    if safe_title and safe_title.lower() != card_title.lower():
-        header.append(f"✨ <b>{safe_title}</b> ✨")
+        header.append(f"<b>{html.escape(card_title)}</b>")
+    if safe_title and safe_title.lower() not in {card_title.lower(), "main menu"}:
+        header.append(f"<b>{html.escape(safe_title)}</b>")
     if tagline:
         header.append(html.escape(tagline))
     body = [html.escape(str(line)) for line in lines if str(line).strip()]
@@ -520,14 +533,16 @@ def premium_card(title: str, lines: list[str]) -> str:
 
 def premium_card_html(title: str, lines: list[str]) -> str:
     app_settings = settings()
-    card_title = str(app_settings.get("bot_card_title", "SELLER BOT") or "SELLER BOT").strip()
-    tagline = str(app_settings.get("bot_card_tagline", "") or "").strip()
-    safe_title = str(title or "").strip()
+    card_title = sanitize_heading(str(app_settings.get("bot_card_title", "") or "").strip())
+    if not card_title:
+        card_title = sanitize_heading(str(app_settings.get("brand_name", "SELLER BOT") or "SELLER BOT").strip())
+    tagline = sanitize_heading(str(app_settings.get("bot_card_tagline", "") or "").strip())
+    safe_title = sanitize_heading(str(title or "").strip())
     header = []
     if card_title:
-        header.append(f"🔥 <b>{html.escape(card_title)}</b> 🔥")
-    if safe_title and safe_title.lower() != card_title.lower():
-        header.append(f"✨ <b>{html.escape(safe_title)}</b> ✨")
+        header.append(f"<b>{html.escape(card_title)}</b>")
+    if safe_title and safe_title.lower() not in {card_title.lower(), "main menu"}:
+        header.append(f"<b>{html.escape(safe_title)}</b>")
     if tagline:
         header.append(html.escape(tagline))
     body = [str(line) for line in lines if str(line).strip()]
