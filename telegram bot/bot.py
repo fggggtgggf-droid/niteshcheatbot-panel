@@ -432,16 +432,48 @@ def build_reply_keyboard(telegram_id: int) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=False)
 
 
+def main_button_callback(action: str) -> str:
+    for button in list_buttons():
+        if str(button.get("builtin_action", "") or "").strip() == action:
+            return f"btn:{button['id']}"
+    fallback_map = {
+        "shop_now": "shop_now",
+        "my_orders": "my_orders_view",
+        "deposit_now": "deposit_now",
+        "all_history": "history:menu",
+    }
+    return fallback_map.get(action, "back:menu")
+
+
 def build_main_menu() -> InlineKeyboardMarkup:
-    rows = []
-    pair = []
+    rows = [
+        [
+            InlineKeyboardButton("Shop Now", callback_data=main_button_callback("shop_now")),
+            InlineKeyboardButton("My Orders", callback_data=main_button_callback("my_orders")),
+        ],
+        [
+            InlineKeyboardButton("Profile", callback_data=main_button_callback("profile")),
+            InlineKeyboardButton("Pay Proof", callback_data=main_button_callback("pay_proof")),
+        ],
+        [
+            InlineKeyboardButton("Feedback", callback_data=main_button_callback("feedback")),
+            InlineKeyboardButton("How to Use", callback_data=main_button_callback("how_to_use")),
+        ],
+        [
+            InlineKeyboardButton("Support", callback_data=main_button_callback("support")),
+            InlineKeyboardButton("Refer & Earn", callback_data=main_button_callback("refer_earn")),
+        ],
+        [
+            InlineKeyboardButton("Deposit Now", callback_data=main_button_callback("deposit_now")),
+            InlineKeyboardButton("All History", callback_data=main_button_callback("all_history")),
+        ],
+    ]
+    custom_rows = []
     for button in filter_buttons("main"):
-        pair.append(InlineKeyboardButton(button_label(button), callback_data=f"btn:{button['id']}"))
-        if len(pair) == 2:
-            rows.append(pair)
-            pair = []
-    if pair:
-        rows.append(pair)
+        if str(button.get("action_type", "")).strip() == "builtin":
+            continue
+        custom_rows.append([InlineKeyboardButton(button_label(button), callback_data=f"btn:{button['id']}")])
+    rows.extend(custom_rows)
     return InlineKeyboardMarkup(rows)
 
 
