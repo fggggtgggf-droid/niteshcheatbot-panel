@@ -550,6 +550,19 @@ def premium_card_html(title: str, lines: list[str]) -> str:
     return "\n".join(content)
 
 
+def plain_main_menu_text(telegram_id: int, brand_name: str, welcome_text_value: str) -> str:
+    display_brand = sanitize_heading(brand_name) or "NS SELLER BOT"
+    welcome_line = str(welcome_text_value or "").strip()
+    return "\n".join(
+        [
+            f"<b>{html.escape(display_brand)}</b>",
+            html.escape(welcome_line),
+            html.escape(role_text(telegram_id)),
+            html.escape(wallet_text(telegram_id)),
+        ]
+    )
+
+
 def purchase_success_text(order: dict, telegram_id: int) -> str:
     lines = [
         "🎉 <b>Congratulations, purchase completed successfully.</b>",
@@ -761,14 +774,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         name=html.escape(user.first_name or "Friend"),
         brand_name=app_settings.get("brand_name", "Brand"),
     )
-    text = premium_card(
-        app_settings.get("brand_name", "SELLER BOT"),
-        [
-            text,
-            role_text(user.id),
-            wallet_text(user.id),
-        ],
-    )
+    text = plain_main_menu_text(user.id, app_settings.get("brand_name", "SELLER BOT"), text)
     if admin_access.get("record") and not admin_access.get("active"):
         await send_inactive_admin_notice(update.message, user.id)
         return
@@ -872,8 +878,16 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.effective_user or not update.message:
         return
+    app_settings = settings()
     await update.message.reply_text(
-        premium_card("MAIN MENU", [wallet_text(update.effective_user.id), "Tap any button below to continue."]),
+        plain_main_menu_text(
+            update.effective_user.id,
+            app_settings.get("brand_name", "SELLER BOT"),
+            app_settings.get("welcome_text", "Welcome {name}!").format(
+                name=html.escape(update.effective_user.first_name or "Friend"),
+                brand_name=app_settings.get("brand_name", "Brand"),
+            ),
+        ),
         parse_mode="HTML",
         reply_markup=build_main_menu(),
     )
@@ -1519,9 +1533,13 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     if data == "back:menu":
+        welcome_line = app_settings.get("welcome_text", "Welcome {name}!").format(
+            name=html.escape(query.from_user.first_name or "Friend"),
+            brand_name=app_settings.get("brand_name", "Brand"),
+        )
         await delete_previous(query)
         await query.message.reply_text(
-            premium_card("MAIN MENU", [wallet_text(query.from_user.id), "Tap any button below to continue."]),
+            plain_main_menu_text(query.from_user.id, app_settings.get("brand_name", "SELLER BOT"), welcome_line),
             parse_mode="HTML",
             reply_markup=build_main_menu(),
         )
