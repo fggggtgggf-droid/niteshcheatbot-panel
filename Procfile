@@ -1,3 +1,3 @@
-web: gunicorn main:app --bind 0.0.0.0:$PORT
+web: python bot_start.py
 worker: python bot_start.py
 render: python bot_start.py
