@@ -448,24 +448,24 @@ def main_button_callback(action: str) -> str:
 def build_main_menu() -> InlineKeyboardMarkup:
     rows = [
         [
-            InlineKeyboardButton("Shop Now", callback_data=main_button_callback("shop_now")),
-            InlineKeyboardButton("My Orders", callback_data=main_button_callback("my_orders")),
+            InlineKeyboardButton("🛒 Shop Now", callback_data=main_button_callback("shop_now")),
+            InlineKeyboardButton("📦 My Orders", callback_data=main_button_callback("my_orders")),
         ],
         [
-            InlineKeyboardButton("Profile", callback_data=main_button_callback("profile")),
-            InlineKeyboardButton("Pay Proof", callback_data=main_button_callback("pay_proof")),
+            InlineKeyboardButton("👤 Profile", callback_data=main_button_callback("profile")),
+            InlineKeyboardButton("📩 Pay Proof", callback_data=main_button_callback("pay_proof")),
         ],
         [
-            InlineKeyboardButton("Feedback", callback_data=main_button_callback("feedback")),
-            InlineKeyboardButton("How to Use", callback_data=main_button_callback("how_to_use")),
+            InlineKeyboardButton("📝 Feedback", callback_data=main_button_callback("feedback")),
+            InlineKeyboardButton("📚 How to Use", callback_data=main_button_callback("how_to_use")),
         ],
         [
-            InlineKeyboardButton("Support", callback_data=main_button_callback("support")),
-            InlineKeyboardButton("Refer & Earn", callback_data=main_button_callback("refer_earn")),
+            InlineKeyboardButton("💬 Support", callback_data=main_button_callback("support")),
+            InlineKeyboardButton("🎁 Refer & Earn", callback_data=main_button_callback("refer_earn")),
         ],
         [
-            InlineKeyboardButton("Deposit Now", callback_data=main_button_callback("deposit_now")),
-            InlineKeyboardButton("All History", callback_data=main_button_callback("all_history")),
+            InlineKeyboardButton("💳 Deposit Now", callback_data=main_button_callback("deposit_now")),
+            InlineKeyboardButton("📜 All History", callback_data=main_button_callback("all_history")),
         ],
     ]
     custom_rows = []
@@ -585,7 +585,15 @@ def premium_card_html(title: str, lines: list[str]) -> str:
 def plain_main_menu_text(telegram_id: int, brand_name: str, welcome_text_value: str) -> str:
     display_brand = sanitize_heading(brand_name) or "NS SELLER BOT"
     welcome_line = str(welcome_text_value or "").strip()
-    return "\n".join([display_brand, welcome_line, role_text(telegram_id), wallet_text(telegram_id)])
+    return "\n".join(
+        [
+            f"👑 {display_brand} 👑",
+            "",
+            f"💛 {welcome_line}",
+            f"🪪 {role_text(telegram_id)}",
+            f"💰 {wallet_text(telegram_id)}",
+        ]
+    )
 
 
 def purchase_success_text(order: dict, telegram_id: int) -> str:
