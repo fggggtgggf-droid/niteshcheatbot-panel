@@ -553,14 +553,7 @@ def premium_card_html(title: str, lines: list[str]) -> str:
 def plain_main_menu_text(telegram_id: int, brand_name: str, welcome_text_value: str) -> str:
     display_brand = sanitize_heading(brand_name) or "NS SELLER BOT"
     welcome_line = str(welcome_text_value or "").strip()
-    return "\n".join(
-        [
-            f"<b>{html.escape(display_brand)}</b>",
-            html.escape(welcome_line),
-            html.escape(role_text(telegram_id)),
-            html.escape(wallet_text(telegram_id)),
-        ]
-    )
+    return "\n".join([display_brand, welcome_line, role_text(telegram_id), wallet_text(telegram_id)])
 
 
 def purchase_success_text(order: dict, telegram_id: int) -> str:
@@ -778,7 +771,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await context.bot.delete_message(chat_id=user.id, message_id=last_start_message_id)
         except Exception:
             pass
-    sent = await update.message.reply_text(text, parse_mode="HTML", reply_markup=build_main_menu())
+    sent = await update.message.reply_text(text, reply_markup=build_main_menu())
     context.user_data["last_start_message_id"] = sent.message_id
 
 
@@ -882,7 +875,6 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 brand_name=app_settings.get("brand_name", "Brand"),
             ),
         ),
-        parse_mode="HTML",
         reply_markup=build_main_menu(),
     )
 
@@ -1542,7 +1534,6 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await delete_previous(query)
         await query.message.reply_text(
             plain_main_menu_text(query.from_user.id, app_settings.get("brand_name", "SELLER BOT"), welcome_line),
-            parse_mode="HTML",
             reply_markup=build_main_menu(),
         )
         return
