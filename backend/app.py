@@ -476,6 +476,91 @@ def send_telegram_media(chat_id: str, media_type: str, media: str, caption: str)
     return send_telegram_message(chat_id, caption)
 
 
+def find_user_by_telegram_id(telegram_id: str) -> dict:
+    target = str(telegram_id or "").strip()
+    if not target:
+        return {}
+    return next((item for item in list_collection("users") if str(item.get("telegram_id", "")).strip() == target), {})
+
+
+def referral_reward_amount() -> float:
+    settings = get_settings()
+    try:
+        return max(0.0, float(settings.get("referral_reward_amount", 0) or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def referral_summary_payload(telegram_id: str) -> dict:
+    user = find_user_by_telegram_id(telegram_id)
+    settings = get_settings()
+    reward_amount = referral_reward_amount()
+    bot_username = str(settings.get("bot_username", "your_bot") or "your_bot").strip()
+    ref_link = f"https://t.me/{bot_username}?start=ref_{telegram_id}"
+    referred = [
+        item
+        for item in list_collection("users")
+        if str(item.get("referred_by_telegram_id", "")).strip() == str(telegram_id).strip()
+    ]
+    completed = [item for item in referred if int(item.get("referral_reward_granted", 0) or 0) == 1]
+    return {
+        "reward_amount": reward_amount,
+        "ref_link": ref_link,
+        "share_text": str(settings.get("referral_share_text", "") or "").format(ref_link=ref_link),
+        "total_referred": len(referred),
+        "completed_referrals": len(completed),
+        "pending_referrals": max(0, len(referred) - len(completed)),
+        "total_earned": float(user.get("referral_earnings", 0) or 0) if user else 0.0,
+    }
+
+
+def grant_referral_reward(purchaser: dict, purchase_amount: float) -> None:
+    referred_by = str((purchaser or {}).get("referred_by_telegram_id", "") or "").strip()
+    if not referred_by or int((purchaser or {}).get("referral_reward_granted", 0) or 0) == 1:
+        return
+    referrer = find_user_by_telegram_id(referred_by)
+    if not referrer or str(referrer.get("telegram_id", "")).strip() == str(purchaser.get("telegram_id", "")).strip():
+        return
+    reward = referral_reward_amount()
+    referrer_balance = float(referrer.get("balance", 0) or 0)
+    referrer_count = int(referrer.get("referral_count", 0) or 0)
+    referrer_earnings = float(referrer.get("referral_earnings", 0) or 0)
+    if reward > 0:
+        update_item(
+            "users",
+            str(referrer["id"]),
+            {
+                "balance": referrer_balance + reward,
+                "referral_count": referrer_count + 1,
+                "referral_earnings": referrer_earnings + reward,
+            },
+        )
+        purchaser_username = str(purchaser.get("username", "") or "").strip()
+        purchaser_name = str(purchaser.get("first_name", "") or "User").strip()
+        purchaser_display = f"@{purchaser_username}" if purchaser_username else purchaser_name
+        send_telegram_message(
+            referred_by,
+            "\n".join(
+                [
+                    "Referral reward added successfully.",
+                    f"User: {purchaser_display}",
+                    f"Purchase Amount: Rs {int(float(purchase_amount or 0))}",
+                    f"Reward Added: Rs {int(reward)}",
+                    f"New Wallet Balance: Rs {int(referrer_balance + reward)}",
+                ]
+            ),
+        )
+    update_item(
+        "users",
+        str(purchaser["id"]),
+        {
+            "referral_reward_granted": 1,
+            "referral_reward_amount": reward,
+            "referral_reward_granted_at": now_str(),
+        },
+    )
+
+
 @app.get("/api/health")
 def health():
     return jsonify({"status": "ok"})
@@ -729,6 +814,7 @@ def payment_settings_get():
             "upi_id": settings.get("payment_upi_id", ""),
             "min_deposit": int(settings.get("payment_min_deposit", "100") or 100),
             "max_deposit": int(settings.get("payment_max_deposit", "5000") or 5000),
+            "referral_reward_amount": float(settings.get("referral_reward_amount", "0") or 0),
             "use_upi": int(settings.get("payment_mode_upi", "1") or 1),
             "use_gateway": int(settings.get("payment_mode_gateway", "0") or 0),
         }
@@ -745,6 +831,7 @@ def payment_settings_update():
             "payment_upi_id": str(payload.get("upi_id", current.get("payment_upi_id", ""))).strip(),
             "payment_min_deposit": str(int(payload.get("min_deposit", current.get("payment_min_deposit", 100)) or 100)),
             "payment_max_deposit": str(int(payload.get("max_deposit", current.get("payment_max_deposit", 5000)) or 5000)),
+            "referral_reward_amount": str(float(payload.get("referral_reward_amount", current.get("referral_reward_amount", 0)) or 0)),
             "payment_mode_upi": "1"
             if int(payload.get("use_upi", current.get("payment_mode_upi", 1)) or 1)
             else "0",
@@ -768,6 +855,11 @@ def users_by_telegram_get(telegram_id: str):
         return jsonify({})
     user = next((item for item in list_collection("users") if str(item.get("telegram_id", "")).strip() == target), {})
     return jsonify(user or {})
+
+
+@app.get("/api/referrals/<telegram_id>")
+def referrals_get(telegram_id: str):
+    return jsonify(referral_summary_payload(telegram_id))
 
 
 @app.post("/api/users")
@@ -1183,6 +1275,7 @@ def purchase_with_wallet():
         },
     )
     order = get_item("orders", order_id) or {}
+    grant_referral_reward(user, price)
     return jsonify({"status": "ok", "order_id": order_id, "new_balance": balance - price, "order": order})
 
 

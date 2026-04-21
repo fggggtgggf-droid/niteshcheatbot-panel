@@ -298,6 +298,14 @@ def highlighted_label(label: str) -> str:
     return clean.strip()
 
 
+def clean_button_text(label: str) -> str:
+    clean = str(label or "").replace("â€¢", " ").strip()
+    clean = re.sub(r"[âœ¦âœ§âœ©âœªâœ«âœ¬âœ­âœ®âœ¯âœ°â˜…â˜†â–âˆâ‰âŠâ‹â—†â—‡â—ˆâ—‰â¬¥â¬¦â™¦]+", " ", clean)
+    clean = re.sub(r"[`~_=|]+", " ", clean)
+    clean = re.sub(r"\s+", " ", clean)
+    return clean.strip()
+
+
 def sanitize_heading(text: str) -> str:
     clean = EMOJI_RE.sub("", str(text or "")).strip()
     clean = re.sub(r"[✦✧✩✪✫✬✭✮✯✰★☆❖❈❉❊❋◆◇◈◉⬥⬦♦]+", " ", clean)
@@ -321,10 +329,13 @@ def button_label(button: dict) -> str:
         "deposit_now": "Deposit Now",
         "all_history": "All History",
     }
+    raw_label = str(button.get("label", "") or "").strip()
+    if raw_label:
+        return clean_button_text(raw_label)
     builtin_action = str(button.get("builtin_action", "") or "").strip()
     if builtin_action in builtin_map:
         return builtin_map[builtin_action]
-    return highlighted_label(str(button.get("label", "") or ""))
+    return clean_button_text(raw_label)
 
 
 def current_user_role(telegram_id: int) -> str:
@@ -336,6 +347,22 @@ def current_user_role(telegram_id: int) -> str:
 def role_text(telegram_id: int) -> str:
     role = current_user_role(telegram_id)
     return f"Status: {'Reseller' if role == 'reseller' else 'User'}"
+
+
+def safe_template(template: str, values: dict, fallback: str) -> str:
+    source = str(template or "").strip() or fallback
+    try:
+        rendered = source.format(**values)
+    except Exception:
+        rendered = fallback.format(**values)
+    return str(rendered or "").strip()
+
+
+def referral_summary(telegram_id: int) -> dict:
+    try:
+        return api_get(f"/referrals/{urllib.parse.quote(str(telegram_id))}")
+    except Exception:
+        return {}
 
 
 def plan_price_for_user(plan: dict, telegram_id: int) -> float:
@@ -446,34 +473,18 @@ def main_button_callback(action: str) -> str:
 
 
 def build_main_menu() -> InlineKeyboardMarkup:
-    rows = [
-        [
-            InlineKeyboardButton("🛒 Shop Now", callback_data=main_button_callback("shop_now")),
-            InlineKeyboardButton("📦 My Orders", callback_data=main_button_callback("my_orders")),
-        ],
-        [
-            InlineKeyboardButton("👤 Profile", callback_data=main_button_callback("profile")),
-            InlineKeyboardButton("📩 Pay Proof", callback_data=main_button_callback("pay_proof")),
-        ],
-        [
-            InlineKeyboardButton("📝 Feedback", callback_data=main_button_callback("feedback")),
-            InlineKeyboardButton("📚 How to Use", callback_data=main_button_callback("how_to_use")),
-        ],
-        [
-            InlineKeyboardButton("💬 Support", callback_data=main_button_callback("support")),
-            InlineKeyboardButton("🎁 Refer & Earn", callback_data=main_button_callback("refer_earn")),
-        ],
-        [
-            InlineKeyboardButton("💳 Deposit Now", callback_data=main_button_callback("deposit_now")),
-            InlineKeyboardButton("📜 All History", callback_data=main_button_callback("all_history")),
-        ],
-    ]
-    custom_rows = []
+    rows = []
+    current_row = []
     for button in filter_buttons("main"):
-        if str(button.get("action_type", "")).strip() == "builtin":
-            continue
-        custom_rows.append([InlineKeyboardButton(button_label(button), callback_data=f"btn:{button['id']}")])
-    rows.extend(custom_rows)
+        action_type = str(button.get("action_type", "")).strip()
+        builtin_action = str(button.get("builtin_action", "")).strip()
+        callback_data = main_button_callback(builtin_action) if action_type == "builtin" else f"btn:{button['id']}"
+        current_row.append(InlineKeyboardButton(button_label(button), callback_data=callback_data))
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
     return InlineKeyboardMarkup(rows)
 
 
@@ -583,17 +594,36 @@ def premium_card_html(title: str, lines: list[str]) -> str:
 
 
 def plain_main_menu_text(telegram_id: int, brand_name: str, welcome_text_value: str) -> str:
-    display_brand = sanitize_heading(brand_name) or "NS SELLER BOT"
-    welcome_line = str(welcome_text_value or "").strip()
-    return "\n".join(
-        [
-            f"👑 {display_brand} 👑",
-            "",
-            f"💛 {welcome_line}",
-            f"🪪 {role_text(telegram_id)}",
-            f"💰 {wallet_text(telegram_id)}",
-        ]
+    app_settings = settings()
+    user = get_user_by_telegram_id(telegram_id) or {}
+    role = "Reseller" if current_user_role(telegram_id) == "reseller" else "User"
+    balance = int(get_wallet_balance(telegram_id))
+    replacements = {
+        "brand_name": str(brand_name or "").strip() or "SELLER BOT",
+        "welcome_text": str(welcome_text_value or "").strip(),
+        "role": role,
+        "status": role,
+        "balance": balance,
+        "first_name": user.get("first_name", "User"),
+        "username": user.get("username", ""),
+        "telegram_id": telegram_id,
+    }
+    replacements["role_line"] = safe_template(
+        str(app_settings.get("status_text_template", "") or ""),
+        replacements,
+        "Status: {role}",
     )
+    replacements["wallet_line"] = safe_template(
+        str(app_settings.get("wallet_text_template", "") or ""),
+        replacements,
+        "Wallet Balance: Rs {balance}",
+    )
+    rendered = safe_template(
+        str(app_settings.get("start_message_template", "") or ""),
+        replacements,
+        "{brand_name}\n{welcome_text}\n{role_line}\n{wallet_line}",
+    )
+    return "\n".join(line.rstrip() for line in rendered.splitlines() if line.strip())
 
 
 def purchase_success_text(order: dict, telegram_id: int) -> str:
@@ -775,6 +805,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     if is_admin(user.id) or is_owner(user.id):
         sync_admin_profile(user)
+    current_user = get_user_by_telegram_id(user.id)
+    referral_source = ""
+    if context.args and (not current_user or not str(current_user.get("referred_by_telegram_id", "")).strip()):
+        first_arg = str(context.args[0] or "").strip()
+        if first_arg.startswith("ref_"):
+            referred_by = first_arg.replace("ref_", "", 1).strip()
+            if referred_by and referred_by != str(user.id):
+                referral_source = referred_by
     api_send(
         "/users",
         "POST",
@@ -783,6 +821,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             "first_name": user.first_name or "Friend",
             "username": user.username or "",
             "role": "user",
+            **({"referred_by_telegram_id": referral_source} if referral_source else {}),
         },
     )
     current_user = get_user_by_telegram_id(user.id)
@@ -1945,9 +1984,33 @@ async def on_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 )
                 return
             if action == "refer_earn":
-                bot_username = app_settings.get("bot_username", "your_bot")
+                summary = referral_summary(query.from_user.id)
+                ref_link = str(summary.get("ref_link", "") or "").strip()
+                share_text = str(summary.get("share_text", "") or app_settings.get("referral_share_text", "") or "").strip()
+                share_url = ""
+                if ref_link:
+                    share_url = (
+                        "https://t.me/share/url?url="
+                        + urllib.parse.quote(ref_link, safe="")
+                        + "&text="
+                        + urllib.parse.quote(share_text or ref_link, safe="")
+                    )
+                rows = []
+                if share_url:
+                    rows.append([InlineKeyboardButton("Share Referral Link", url=share_url)])
+                rows.append([InlineKeyboardButton("Back to Menu", callback_data="back:menu")])
                 await query.message.reply_text(
-                    app_settings.get("refer_text", "").format(ref_link=f"https://t.me/{bot_username}?start=ref_{query.from_user.id}")
+                    "\n\n".join(
+                        [
+                            str(app_settings.get("refer_text", "") or "Refer & Earn").format(ref_link=ref_link),
+                            f"Total Referrals: {int(summary.get('total_referred', 0) or 0)}",
+                            f"Completed Rewards: {int(summary.get('completed_referrals', 0) or 0)}",
+                            f"Pending Referrals: {int(summary.get('pending_referrals', 0) or 0)}",
+                            f"Total Earned: Rs {int(float(summary.get('total_earned', 0) or 0))}",
+                            f"Reward Per Referral: Rs {int(float(summary.get('reward_amount', 0) or 0))}",
+                        ]
+                    ),
+                    reply_markup=InlineKeyboardMarkup(rows),
                 )
                 return
             if action == "pay_proof":

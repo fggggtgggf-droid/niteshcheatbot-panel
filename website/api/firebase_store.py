@@ -18,6 +18,9 @@ DEFAULT_SETTINGS = {
     "telegram_support_link": "https://t.me/your_support",
     "whatsapp_support_link": "https://wa.me/0000000000",
     "welcome_text": "GOLDEN SELLER BOT\n\nYo {name}, Welcome Back!!",
+    "start_message_template": "{brand_name}\n{welcome_text}\n{role_line}\n{wallet_line}",
+    "status_text_template": "Status: {role}",
+    "wallet_text_template": "Wallet Balance: Rs {balance}",
     "shop_header_text": "Choose a product",
     "profile_text": "YOUR PROFILE\nName: {name}\nUsername: {username}\nUser ID: {telegram_id}\nMember Since: {created_at}",
     "orders_text": "MY ORDERS (last 10)\nNo orders yet.",
@@ -27,6 +30,8 @@ DEFAULT_SETTINGS = {
     "feedback_text": "Feedback ke liye apna message admin ko bhej sakte ho.",
     "pay_proof_text": "Payment proof bhejne ke liye screenshot support ko forward karein.",
     "id_help_text": "Apna product/account ID bhejo, team usko verify kar degi.",
+    "referral_reward_amount": "0",
+    "referral_share_text": "Share your referral link with your friends and earn rewards after their first successful purchase.",
     "bot_username": "NS_seller_bot_bot",
     "bot_token": "8683699409:AAEgRHt3EReDR_X2xMmBZvuEJqN-61iR2bk",
     "payment_upi_id": "",
@@ -206,6 +211,18 @@ def create_user(payload: dict[str, Any]) -> str:
                     updates["captcha_verified"] = int(payload.get("captcha_verified", user.get("captcha_verified", 0)) or 0)
                 if "captcha_passed_at" in payload:
                     updates["captcha_passed_at"] = payload.get("captcha_passed_at", user.get("captcha_passed_at", ""))
+                if "referred_by_telegram_id" in payload:
+                    updates["referred_by_telegram_id"] = str(payload.get("referred_by_telegram_id", user.get("referred_by_telegram_id", ""))).strip()
+                if "referral_reward_granted" in payload:
+                    updates["referral_reward_granted"] = int(payload.get("referral_reward_granted", user.get("referral_reward_granted", 0)) or 0)
+                if "referral_reward_amount" in payload:
+                    updates["referral_reward_amount"] = float(payload.get("referral_reward_amount", user.get("referral_reward_amount", 0)) or 0)
+                if "referral_reward_granted_at" in payload:
+                    updates["referral_reward_granted_at"] = str(payload.get("referral_reward_granted_at", user.get("referral_reward_granted_at", "")))
+                if "referral_count" in payload:
+                    updates["referral_count"] = int(payload.get("referral_count", user.get("referral_count", 0)) or 0)
+                if "referral_earnings" in payload:
+                    updates["referral_earnings"] = float(payload.get("referral_earnings", user.get("referral_earnings", 0)) or 0)
                 if not updates:
                     return str(user["id"])
                 update_item(
@@ -224,6 +241,12 @@ def create_user(payload: dict[str, Any]) -> str:
         "is_banned": int(payload.get("is_banned", 0)),
         "captcha_verified": int(payload.get("captcha_verified", 0)),
         "captcha_passed_at": payload.get("captcha_passed_at", ""),
+        "referred_by_telegram_id": str(payload.get("referred_by_telegram_id", "")).strip(),
+        "referral_reward_granted": int(payload.get("referral_reward_granted", 0) or 0),
+        "referral_reward_amount": float(payload.get("referral_reward_amount", 0) or 0),
+        "referral_reward_granted_at": str(payload.get("referral_reward_granted_at", "")).strip(),
+        "referral_count": int(payload.get("referral_count", 0) or 0),
+        "referral_earnings": float(payload.get("referral_earnings", 0) or 0),
         "created_at": payload.get("created_at", time.strftime("%Y-%m-%d %H:%M:%S")),
     }
     return create_item("users", defaults)

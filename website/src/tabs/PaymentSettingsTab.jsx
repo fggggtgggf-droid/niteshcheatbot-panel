@@ -13,13 +13,13 @@ import {
 import { apiGet, apiSend } from '../api.js'
 
 export default function PaymentSettingsTab() {
-  const [settings, setSettings] = useState({ qr: '', upi_id: '', min_deposit: 100, max_deposit: 5000 })
+  const [settings, setSettings] = useState({ qr: '', upi_id: '', min_deposit: 100, max_deposit: 5000, referral_reward_amount: 0 })
   const [message, setMessage] = useState('')
 
   useEffect(() => {
     apiGet('/payment-settings')
       .then(setSettings)
-      .catch(() => setSettings({ qr: '', upi_id: '', min_deposit: 100, max_deposit: 5000 }))
+      .catch(() => setSettings({ qr: '', upi_id: '', min_deposit: 100, max_deposit: 5000, referral_reward_amount: 0 }))
   }, [])
 
   const saveSettings = async () => {
@@ -74,6 +74,15 @@ export default function PaymentSettingsTab() {
                 fullWidth
               />
             </Stack>
+            <TextField
+              label="Referral Reward Amount"
+              type="number"
+              value={settings.referral_reward_amount || 0}
+              onChange={(event) =>
+                setSettings((prev) => ({ ...prev, referral_reward_amount: Number(event.target.value || 0) }))
+              }
+              fullWidth
+            />
             <TextField
               label="Optional Static QR (Telegram file_id / Image URL / uploaded image)"
               value={settings.qr || ''}
