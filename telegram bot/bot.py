@@ -626,6 +626,44 @@ def plain_main_menu_text(telegram_id: int, brand_name: str, welcome_text_value: 
     return "\n".join(line.rstrip() for line in rendered.splitlines() if line.strip())
 
 
+def profile_lines(telegram_id: int) -> list[str]:
+    app_settings = settings()
+    user = get_user_by_telegram_id(telegram_id) or {}
+    replacements = {
+        "name": user.get("first_name", "User"),
+        "username": f"@{user.get('username')}" if user.get("username") else "-",
+        "telegram_id": telegram_id,
+        "created_at": user.get("created_at", "-"),
+        "role": "Reseller" if current_user_role(telegram_id) == "reseller" else "User",
+        "balance": int(user.get("balance", 0) or 0),
+        "role_line": role_text(telegram_id),
+        "wallet_line": wallet_text(telegram_id),
+    }
+    body = safe_template(
+        str(app_settings.get("profile_text", "") or ""),
+        replacements,
+        "YOUR PROFILE\nName: {name}\nUsername: {username}\nUser ID: {telegram_id}\nMember Since: {created_at}",
+    )
+    return [*body.splitlines(), replacements["role_line"], replacements["wallet_line"]]
+
+
+def orders_summary_lines(telegram_id: int, orders: list[dict]) -> list[str]:
+    app_settings = settings()
+    header = safe_template(
+        str(app_settings.get("orders_text", "") or ""),
+        {"wallet_line": wallet_text(telegram_id)},
+        "MY ORDERS (last 10)\nNo orders yet.",
+    )
+    header_lines = [line for line in header.splitlines() if line.strip()]
+    if not orders:
+        return [*header_lines, wallet_text(telegram_id)]
+    lines = [*header_lines[:1], wallet_text(telegram_id)]
+    for item in orders[:10]:
+        lines.append(f"Order {item.get('id')} | {item.get('status', '-')}")
+        lines.append(f"Rs {int(float(item.get('amount', 0) or 0))}")
+    return lines
+
+
 def purchase_success_text(order: dict, telegram_id: int) -> str:
     lines = [
         "🎉 <b>Congratulations, purchase completed successfully.</b>",
